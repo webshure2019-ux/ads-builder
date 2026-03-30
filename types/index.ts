@@ -13,6 +13,8 @@ export type BiddingStrategy =
 export type GoalType = 'lead_gen' | 'sales' | 'awareness'
 export type ToneType = 'professional' | 'friendly' | 'urgent' | 'authoritative' | 'conversational'
 export type AdStrength = 'poor' | 'average' | 'good' | 'excellent'
+export type CompetitionLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'UNSPECIFIED'
+export type CanvasStep = 'type' | 'brief' | 'keywords' | 'settings' | 'generate' | 'review'
 
 export interface Client {
   id: string
@@ -56,7 +58,7 @@ export interface Keyword {
   text: string
   match_type: MatchType
   volume?: number
-  competition?: string
+  competition?: CompetitionLevel
   suggested_bid?: number
   selected: boolean
 }
@@ -112,7 +114,7 @@ export interface ScrapedContent {
 export interface KeywordSuggestion {
   text: string
   volume: number
-  competition: string
+  competition: CompetitionLevel
   suggested_bid: number
 }
 
@@ -132,4 +134,5 @@ export interface CanvasState {
   is_generating: boolean
   is_publishing: boolean
   error: string | null
+  step: CanvasStep
 }
