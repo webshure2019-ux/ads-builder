@@ -86,9 +86,14 @@ function getJsonSchema(type: CampaignType): string {
 
 export function parseAssetsResponse(text: string): GeneratedAssets {
   try {
-    return JSON.parse(text) as GeneratedAssets
-  } catch {
-    throw new Error(`Claude returned invalid JSON: ${text.slice(0, 300)}`)
+    const parsed = JSON.parse(text)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Response is not a JSON object')
+    }
+    return parsed as GeneratedAssets
+  } catch (err) {
+    const preview = text.slice(0, 300) + (text.length > 300 ? '...' : '')
+    throw new Error(`Claude returned invalid JSON: ${preview}`)
   }
 }
 
@@ -104,6 +109,9 @@ export async function generateAssets(
     messages: [{ role: 'user', content: prompt }],
   })
 
-  const text = message.content[0].type === 'text' ? message.content[0].text : ''
-  return parseAssetsResponse(text)
+  const firstContent = message.content[0]
+  if (!firstContent || firstContent.type !== 'text') {
+    throw new Error('Claude returned no text content')
+  }
+  return parseAssetsResponse(firstContent.text)
 }
