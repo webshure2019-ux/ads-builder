@@ -4,8 +4,8 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  background-color: #F4FAFD;
-  color: #052E4B;
-  font-family: 'Roboto', Arial, sans-serif;
+@layer base {
+  body {
+    @apply bg-mist text-navy font-body;
+  }
 }
