@@ -204,7 +204,7 @@ export async function publishPMaxCampaign(
     headlines: assets.headlines!.map(text => ({ text })),
     long_headlines: (assets.long_headlines || []).map(text => ({ text })),
     descriptions: assets.descriptions.map(text => ({ text })),
-    final_urls: [settings.audience_signals?.[0] || 'https://example.com'],
+    final_urls: [settings.final_url || ''],
   }] as any)
 
   return campaign.resource_name.split('/').pop() || ''

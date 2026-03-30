@@ -31,6 +31,7 @@ export interface CampaignSettingsData {
   target_roas?: number
   locations: string[]
   language: string
+  final_url?: string
   schedule?: string
   audience_signals?: string[]
   merchant_center_id?: string
