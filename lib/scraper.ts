@@ -11,7 +11,7 @@ export function inferTone(text: string): ToneType {
   return 'professional'
 }
 
-export function extractContent(html: string, url: string): ScrapedContent {
+export function extractContent(html: string, _url: string): ScrapedContent {
   const $ = cheerio.load(html)
 
   $('script, style, nav, footer, noscript, iframe').remove()
