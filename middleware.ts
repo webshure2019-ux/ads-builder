@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { computeSessionToken } from '@/lib/auth'
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Allow login page and auth API through
+  // Allow login page and auth API through without a session check
   if (pathname.startsWith('/login') || pathname.startsWith('/api/auth')) {
     return NextResponse.next()
   }
 
   const cookie = request.cookies.get('ads-auth')?.value
-  if (cookie !== process.env.TOOL_PASSWORD) {
+  const expected = await computeSessionToken()
+
+  if (!cookie || cookie !== expected) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 

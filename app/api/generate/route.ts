@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateAssets } from '@/lib/claude'
+import { requireAuth } from '@/lib/auth'
 import type { Brief, CampaignType } from '@/types'
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAuth(request)
+  if (auth) return auth
+
   const body = await request.json()
   const { brief, campaign_type }: { brief: Brief; campaign_type: CampaignType } = body
 
@@ -14,6 +18,7 @@ export async function POST(request: NextRequest) {
     const assets = await generateAssets(brief, campaign_type)
     return NextResponse.json({ assets })
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    console.error('[/api/generate]', error)
+    return NextResponse.json({ error: 'Failed to generate assets' }, { status: 500 })
   }
 }

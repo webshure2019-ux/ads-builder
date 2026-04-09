@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { publishSearchCampaign, publishPMaxCampaign } from '@/lib/google-ads'
 import { createServerClient } from '@/lib/supabase'
+import { requireAuth } from '@/lib/auth'
 import type { CampaignType, CampaignSettingsData, GeneratedAssets, Keyword } from '@/types'
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAuth(request)
+  if (auth) return auth
+
   const body = await request.json()
   const {
     campaign_id,
@@ -42,7 +46,7 @@ export async function POST(request: NextRequest) {
       )
     } else {
       return NextResponse.json(
-        { error: `Publishing ${campaign_type} campaigns not yet implemented` },
+        { error: `Publishing ${campaign_type} campaigns is not yet supported` },
         { status: 501 }
       )
     }
@@ -58,11 +62,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ google_campaign_id: googleCampaignId })
   } catch (error) {
+    console.error('[/api/publish]', error)
     await supabase
       .from('campaigns')
       .update({ status: 'failed' })
       .eq('id', campaign_id)
 
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to publish campaign' }, { status: 500 })
   }
 }

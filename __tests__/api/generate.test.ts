@@ -2,6 +2,11 @@
 import { POST } from '@/app/api/generate/route'
 import { NextRequest } from 'next/server'
 
+// Mock auth so tests don't need a real session cookie
+jest.mock('@/lib/auth', () => ({
+  requireAuth: jest.fn().mockResolvedValue(null), // null = authenticated
+}))
+
 // Mock Claude so tests don't hit the real API
 jest.mock('@/lib/claude', () => ({
   generateAssets: jest.fn().mockResolvedValue({

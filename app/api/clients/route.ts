@@ -1,11 +1,16 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { listMccClients } from '@/lib/google-ads'
+import { requireAuth } from '@/lib/auth'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAuth(request)
+  if (auth) return auth
+
   try {
     const clients = await listMccClients()
     return NextResponse.json({ clients })
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    console.error('[/api/clients]', error)
+    return NextResponse.json({ error: 'Failed to fetch client accounts' }, { status: 500 })
   }
 }

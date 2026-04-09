@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
+import { requireAuth } from '@/lib/auth'
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAuth(request)
+  if (auth) return auth
+
   const body = await request.json()
   const { client_id, name, type, settings, brief } = body
 
@@ -13,7 +17,10 @@ export async function POST(request: NextRequest) {
     .select()
     .single()
 
-  if (campError) return NextResponse.json({ error: campError.message }, { status: 500 })
+  if (campError) {
+    console.error('[/api/campaigns POST]', campError)
+    return NextResponse.json({ error: 'Failed to create campaign' }, { status: 500 })
+  }
 
   await supabase.from('briefs').insert({
     campaign_id: campaign.id,
@@ -31,13 +38,19 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ id: campaign.id })
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAuth(request)
+  if (auth) return auth
+
   const supabase = createServerClient()
   const { data, error } = await supabase
     .from('campaigns')
     .select('*, clients(name)')
     .order('created_at', { ascending: false })
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    console.error('[/api/campaigns GET]', error)
+    return NextResponse.json({ error: 'Failed to fetch campaigns' }, { status: 500 })
+  }
   return NextResponse.json({ campaigns: data })
 }
