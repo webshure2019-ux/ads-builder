@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { publishSearchCampaign, publishPMaxCampaign } from '@/lib/google-ads'
 import { createServerClient } from '@/lib/supabase'
 import { requireAuth } from '@/lib/auth'
-import type { CampaignType, CampaignSettingsData, GeneratedAssets, Keyword } from '@/types'
+import type { CampaignType, CampaignSettingsData, GeneratedAssets, Keyword, AdGroup } from '@/types'
 
 export async function POST(request: NextRequest) {
   const auth = await requireAuth(request)
@@ -15,7 +15,8 @@ export async function POST(request: NextRequest) {
     campaign_name,
     campaign_type,
     settings,
-    assets,
+    assets,       // non-Search campaigns
+    ad_groups,    // Search campaigns
     keywords,
   }: {
     campaign_id: string
@@ -23,11 +24,12 @@ export async function POST(request: NextRequest) {
     campaign_name: string
     campaign_type: CampaignType
     settings: CampaignSettingsData
-    assets: GeneratedAssets
+    assets?: GeneratedAssets
+    ad_groups?: AdGroup[]
     keywords: Keyword[]
   } = body
 
-  if (!campaign_id || !client_account_id || !campaign_type || !assets) {
+  if (!campaign_id || !client_account_id || !campaign_type) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
@@ -37,10 +39,14 @@ export async function POST(request: NextRequest) {
     let googleCampaignId: string
 
     if (campaign_type === 'search') {
+      if (!ad_groups?.length) {
+        return NextResponse.json({ error: 'ad_groups required for Search campaigns' }, { status: 400 })
+      }
       googleCampaignId = await publishSearchCampaign(
-        client_account_id, campaign_name, settings, assets, keywords
+        client_account_id, campaign_name, settings, ad_groups, keywords
       )
     } else if (campaign_type === 'pmax') {
+      if (!assets) return NextResponse.json({ error: 'assets required for PMax campaigns' }, { status: 400 })
       googleCampaignId = await publishPMaxCampaign(
         client_account_id, campaign_name, settings, assets
       )

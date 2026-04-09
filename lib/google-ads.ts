@@ -1,6 +1,6 @@
 // lib/google-ads.ts
 import { GoogleAdsApi, services } from 'google-ads-api'
-import { Keyword, CampaignSettingsData, GeneratedAssets, KeywordSuggestion } from '@/types'
+import { Keyword, CampaignSettingsData, GeneratedAssets, KeywordSuggestion, AdGroup } from '@/types'
 
 function makeClient() {
   return new GoogleAdsApi({
@@ -96,7 +96,7 @@ export async function publishSearchCampaign(
   clientAccountId: string,
   name: string,
   settings: CampaignSettingsData,
-  assets: GeneratedAssets,
+  adGroups: AdGroup[],
   keywords: Keyword[]
 ): Promise<string> {
   const customer = getClientCustomer(clientAccountId)
@@ -117,56 +117,59 @@ export async function publishSearchCampaign(
   }]) as any
   const campaign = campaignResp.results[0]
 
-  const adGroupResp = await customer.adGroups.create([{
-    name: `${name} Ad Group 1`,
-    campaign: campaign.resource_name,
-    status: 2, // ENABLED
-    type: 2, // SEARCH_STANDARD
-  }]) as any
-  const adGroup = adGroupResp.results[0]
-
-  await customer.adGroupAds.create([{
-    ad_group: adGroup.resource_name,
-    status: 2,
-    ad: {
-      responsive_search_ad: {
-        headlines: assets.headlines!.map(text => ({ text })),
-        descriptions: assets.descriptions.map(text => ({ text })),
-      },
-    },
-  }])
-
-  // Sitelinks
-  if (assets.sitelinks?.length) {
-    await customer.campaignAssets.create(
-      assets.sitelinks.map(sl => ({
-        campaign: campaign.resource_name,
-        asset: {
-          sitelink_asset: {
-            link_text: sl.text,
-            final_urls: [sl.url],
-            description1: sl.description1,
-            description2: sl.description2,
-          },
-        },
-        field_type: 6, // SITELINK
-      })) as any
-    )
-  }
-
-  // Keywords
   const selectedKws = keywords.filter(k => k.selected)
-  if (selectedKws.length > 0) {
-    await customer.adGroupCriteria.create(
-      selectedKws.map(kw => ({
-        ad_group: adGroup.resource_name,
-        keyword: {
-          text: kw.text,
-          match_type: MATCH_TYPE[kw.match_type],
+
+  // Create one ad group per product/service
+  for (const ag of adGroups) {
+    if (!ag.name.trim() || !ag.assets) continue
+
+    const adGroupResp = await customer.adGroups.create([{
+      name: ag.name,
+      campaign: campaign.resource_name,
+      status: 2, // ENABLED
+      type: 2,   // SEARCH_STANDARD
+    }]) as any
+    const createdAdGroup = adGroupResp.results[0]
+
+    await customer.adGroupAds.create([{
+      ad_group: createdAdGroup.resource_name,
+      status: 2,
+      ad: {
+        responsive_search_ad: {
+          headlines: ag.assets.headlines!.map(text => ({ text })),
+          descriptions: ag.assets.descriptions.map(text => ({ text })),
         },
-        status: 2,
-      }))
-    )
+      },
+    }])
+
+    // Keywords shared across all ad groups
+    if (selectedKws.length > 0) {
+      await customer.adGroupCriteria.create(
+        selectedKws.map(kw => ({
+          ad_group: createdAdGroup.resource_name,
+          keyword: { text: kw.text, match_type: MATCH_TYPE[kw.match_type] },
+          status: 2,
+        }))
+      )
+    }
+
+    // Sitelinks (first ad group's sitelinks applied at campaign level)
+    if (ag === adGroups[0] && ag.assets.sitelinks?.length) {
+      await customer.campaignAssets.create(
+        ag.assets.sitelinks.map(sl => ({
+          campaign: campaign.resource_name,
+          asset: {
+            sitelink_asset: {
+              link_text: sl.text,
+              final_urls: [sl.url],
+              description1: sl.description1,
+              description2: sl.description2,
+            },
+          },
+          field_type: 6, // SITELINK
+        })) as any
+      )
+    }
   }
 
   return campaign.resource_name.split('/').pop() || ''

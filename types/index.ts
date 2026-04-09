@@ -1,5 +1,18 @@
 // types/index.ts
 export type CampaignType = 'search' | 'pmax' | 'demand_gen' | 'display' | 'shopping' | 'video'
+export type PpcPackage = 'ppc1' | 'ppc2' | 'ppc3'
+
+export interface PpcPackageConfig {
+  label: string
+  maxAdGroups: number
+  description: string
+}
+
+export const PPC_PACKAGE_CONFIG: Record<PpcPackage, PpcPackageConfig> = {
+  ppc1: { label: 'PPC 1', maxAdGroups: 5,  description: 'Up to 5 products / services' },
+  ppc2: { label: 'PPC 2', maxAdGroups: 12, description: 'Up to 12 products / services' },
+  ppc3: { label: 'PPC 3', maxAdGroups: 20, description: 'Up to 20 products / services' },
+}
 export type CampaignStatus = 'draft' | 'review' | 'approved' | 'published' | 'failed'
 export type AssetType =
   | 'headline' | 'long_headline' | 'description' | 'keyword'
@@ -125,14 +138,23 @@ export interface AdStrengthResult {
   tips: string[]
 }
 
+export interface AdGroup {
+  id: string
+  name: string
+  assets?: GeneratedAssets
+}
+
 export interface CanvasState {
   client_id: string | null
   campaign_type: CampaignType | null
+  ppc_package: PpcPackage | null
+  ad_groups: AdGroup[]
   brief: Partial<Brief>
   settings: Partial<CampaignSettingsData>
-  assets: GeneratedAssets | null
+  assets: GeneratedAssets | null  // used for non-Search campaigns
   campaign_id: string | null
   is_generating: boolean
+  generating_index: number        // which ad group is currently being generated
   is_publishing: boolean
   error: string | null
   step: CanvasStep

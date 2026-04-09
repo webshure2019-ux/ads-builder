@@ -5,6 +5,7 @@ import { Brief, ToneType, GoalType } from '@/types'
 interface Props {
   brief: Partial<Brief>
   onChange: (updates: Partial<Brief>) => void
+  hideProduct?: boolean  // Search campaigns use ad group names instead
 }
 
 const TONES: ToneType[] = ['professional', 'friendly', 'urgent', 'authoritative', 'conversational']
@@ -14,7 +15,7 @@ const GOALS: { value: GoalType; label: string }[] = [
   { value: 'awareness', label: 'Brand Awareness' },
 ]
 
-export function BriefForm({ brief, onChange }: Props) {
+export function BriefForm({ brief, onChange, hideProduct = false }: Props) {
   const [scraping, setScraping] = useState(false)
   const [scrapeError, setScrapeError] = useState('')
 
@@ -70,11 +71,13 @@ export function BriefForm({ brief, onChange }: Props) {
         {scrapeError && <p className="text-red-500 text-xs mt-1">{scrapeError}</p>}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className={label}>Product / Service</label>
-          <input className={input} value={brief.product || ''} onChange={e => onChange({ product: e.target.value })} placeholder="e.g. PPC Management Services" />
-        </div>
+      <div className={hideProduct ? '' : 'grid grid-cols-2 gap-4'}>
+        {!hideProduct && (
+          <div>
+            <label className={label}>Product / Service</label>
+            <input className={input} value={brief.product || ''} onChange={e => onChange({ product: e.target.value })} placeholder="e.g. PPC Management Services" />
+          </div>
+        )}
         <div>
           <label className={label}>Brand Name</label>
           <input className={input} value={brief.brand_name || ''} onChange={e => onChange({ brand_name: e.target.value })} placeholder="e.g. Webshure" />
