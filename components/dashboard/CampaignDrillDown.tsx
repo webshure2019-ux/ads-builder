@@ -124,30 +124,68 @@ function AdGroupRow({ g, currency, clientId }: { g: AdGroupMetrics; currency: st
 }
 
 // ─── Ad Groups tab ─────────────────────────────────────────────────────────────
+type AgSortCol = 'name' | 'impressions' | 'clicks' | 'ctr' | 'cost' | 'conversions' | 'conversion_rate'
+
 function AdGroupsTab({ adGroups, currency, clientId, loading, error }: {
   adGroups: AdGroupMetrics[]; currency: string; clientId: string; loading: boolean; error: string
 }) {
+  const [sortCol, setSortCol] = useState<AgSortCol>('cost')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+
   if (loading) return <PanelSpinner label="Loading ad groups…" />
   if (error)   return <PanelError msg={error} />
   if (adGroups.length === 0) return <div className="text-center py-16 text-teal text-sm">No ad groups found.</div>
+
+  function toggleSort(col: AgSortCol) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('desc') }
+  }
+
+  const sorted = [...adGroups].sort((a, b) => {
+    const av = a[sortCol], bv = b[sortCol]
+    if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv as string) : (bv as string).localeCompare(av)
+    return sortDir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number)
+  })
 
   const totals = adGroups.reduce(
     (acc, g) => ({ impressions: acc.impressions + g.impressions, clicks: acc.clicks + g.clicks, cost: acc.cost + g.cost, conversions: acc.conversions + g.conversions }),
     { impressions: 0, clicks: 0, cost: 0, conversions: 0 }
   )
 
+  function SortTh({ col, label, align = 'right' }: { col: AgSortCol; label: string; align?: 'left' | 'right' }) {
+    const active = sortCol === col
+    return (
+      <th className={`px-4 py-3 text-${align}`}>
+        <button
+          onClick={() => toggleSort(col)}
+          className={`inline-flex items-center gap-1 text-[10px] font-heading font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${active ? 'text-cyan' : 'text-teal hover:text-navy'}`}
+        >
+          {align === 'right' && active && <span className="text-[9px]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+          {label}
+          {align === 'left' && active && <span className="text-[9px]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+        </button>
+      </th>
+    )
+  }
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm min-w-[760px]">
         <thead>
           <tr className="border-b border-cloud">
-            {['Ad Group', 'Status', 'Impressions', 'Clicks', 'CTR', 'Cost', 'Conversions', 'Conv. Rate', ''].map(h => (
-              <th key={h} className={`px-4 py-3 text-[10px] font-heading font-bold uppercase tracking-wider text-teal ${h === 'Ad Group' || h === 'Status' || h === '' ? 'text-left' : 'text-right'}`}>{h}</th>
-            ))}
+            <SortTh col="name"            label="Ad Group"   align="left" />
+            <th className="px-4 py-3 text-left text-[10px] font-heading font-bold uppercase tracking-wider text-teal">Status</th>
+            <SortTh col="impressions"     label="Impressions" />
+            <SortTh col="clicks"          label="Clicks" />
+            <SortTh col="ctr"             label="CTR" />
+            <SortTh col="cost"            label="Cost" />
+            <SortTh col="conversions"     label="Conversions" />
+            <SortTh col="conversion_rate" label="Conv. Rate" />
+            <th />
           </tr>
         </thead>
         <tbody className="divide-y divide-cloud">
-          {adGroups.map(g => <AdGroupRow key={g.id} g={g} currency={currency} clientId={clientId} />)}
+          {sorted.map(g => <AdGroupRow key={g.id} g={g} currency={currency} clientId={clientId} />)}
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-cloud/70 bg-mist">
@@ -385,7 +423,6 @@ function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: s
 
   const typeLabel = AD_TYPE_MAP[ad.type] ?? ad.type
   const isRSA     = typeLabel === 'RSA'
-  const strengthCfg = STRENGTH_CFG[ad.ad_strength] ?? STRENGTH_CFG.UNKNOWN
 
   // Build asset lookup map: text → label
   const assetMap = new Map(assets.map(a => [a.text, a.label]))
@@ -492,32 +529,54 @@ function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: s
               <div className="border-t border-cloud/60 pt-4 mt-2">
                 <p className="text-[10px] font-heading font-bold uppercase tracking-wider text-teal mb-3">Performance Insights</p>
                 {assets.length === 0 ? (
-                  <p className="text-xs text-teal">No asset performance data available yet. Google needs more data before labelling assets.</p>
-                ) : (
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    {(['HEADLINE', 'DESCRIPTION'] as const).map(fieldType => {
-                      const filtered = assets.filter(a => a.field_type === fieldType || a.field_type === (fieldType === 'HEADLINE' ? '5' : '6'))
-                      if (filtered.length === 0) return null
-                      const sorted = [...filtered].sort((a, b) => {
-                        const order = { BEST: 0, GOOD: 1, LOW: 2, LEARNING: 3, UNRATED: 4 }
-                        return (order[a.label as keyof typeof order] ?? 4) - (order[b.label as keyof typeof order] ?? 4)
-                      })
-                      return (
-                        <div key={fieldType}>
-                          <p className="text-[10px] font-bold text-navy/50 mb-2">{fieldType === 'HEADLINE' ? 'Headlines' : 'Descriptions'}</p>
-                          <div className="space-y-1.5">
-                            {sorted.map((a, i) => (
-                              <div key={i} className="flex items-start gap-2">
-                                <PerfChip label={a.label} />
-                                <p className="text-xs text-navy/70 leading-snug">{a.text}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )
-                    })}
+                  <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                    <span className="text-sm flex-shrink-0">ℹ️</span>
+                    <p className="text-xs text-amber-800 leading-relaxed">No asset data returned. This can happen for non-RSA ad types or very new ads.</p>
                   </div>
-                )}
+                ) : (() => {
+                  const allUnrated = assets.every(a => a.label === 'UNRATED' || a.label === '0')
+                  const LABEL_ORDER = { BEST: 0, GOOD: 1, LOW: 2, LEARNING: 3, UNRATED: 4 }
+                  return (
+                    <>
+                      {allUnrated && (
+                        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 mb-4">
+                          <span className="text-sm flex-shrink-0">ℹ️</span>
+                          <p className="text-xs text-amber-800 leading-relaxed">
+                            <strong>All assets are currently Unrated</strong> — this is normal. Google requires roughly <strong>5,000 impressions per asset</strong> before it assigns BEST / GOOD / LOW labels. Labels will appear automatically as your campaign collects more data.
+                          </p>
+                        </div>
+                      )}
+                      <div className="grid sm:grid-cols-2 gap-5">
+                        {(['HEADLINE', 'DESCRIPTION'] as const).map(fieldType => {
+                          const filtered = assets.filter(a =>
+                            a.field_type === fieldType ||
+                            a.field_type === (fieldType === 'HEADLINE' ? '5' : '6')
+                          )
+                          if (filtered.length === 0) return null
+                          const sortedAssets = [...filtered].sort((a, b) =>
+                            (LABEL_ORDER[a.label as keyof typeof LABEL_ORDER] ?? 4) -
+                            (LABEL_ORDER[b.label as keyof typeof LABEL_ORDER] ?? 4)
+                          )
+                          return (
+                            <div key={fieldType}>
+                              <p className="text-[10px] font-bold text-navy/50 uppercase tracking-wider mb-2">
+                                {fieldType === 'HEADLINE' ? `Headlines (${filtered.length})` : `Descriptions (${filtered.length})`}
+                              </p>
+                              <div className="divide-y divide-cloud/60">
+                                {sortedAssets.map((a, i) => (
+                                  <div key={i} className="flex items-center justify-between gap-3 py-1.5">
+                                    <p className="text-xs text-navy/75 leading-snug flex-1 min-w-0">{a.text}</p>
+                                    <div className="flex-shrink-0"><PerfChip label={a.label} /></div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
             )}
           </>
