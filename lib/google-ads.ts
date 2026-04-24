@@ -10,8 +10,18 @@ function makeClient() {
   })
 }
 
-function cleanId(id: string) {
-  return id.replace(/-/g, '')
+// ─── Input validators ─────────────────────────────────────────────────────────
+const ACCOUNT_ID_RE = /^\d{8,12}$/
+const DATE_RE       = /^\d{4}-\d{2}-\d{2}$/
+
+function cleanId(id: string): string {
+  const cleaned = id.replace(/-/g, '')
+  if (!ACCOUNT_ID_RE.test(cleaned)) throw new Error(`Invalid Google Ads account ID: ${id}`)
+  return cleaned
+}
+
+function validateDate(date: string, label: string): void {
+  if (!DATE_RE.test(date)) throw new Error(`Invalid ${label} — expected YYYY-MM-DD`)
 }
 
 function getMccCustomer() {
@@ -208,6 +218,11 @@ export async function getClientStats(
   startDate: string,
   endDate: string
 ): Promise<AccountStats> {
+  // Strict validation before interpolating into GAQL
+  validateDate(startDate, 'start_date')
+  validateDate(endDate, 'end_date')
+  if (startDate > endDate) throw new Error('start_date must be before end_date')
+
   const customer = getClientCustomer(clientAccountId)
 
   const results = await customer.query(`

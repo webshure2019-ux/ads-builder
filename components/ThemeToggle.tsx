@@ -22,7 +22,8 @@ function MoonIcon() {
 }
 
 export function ThemeToggle() {
-  const [dark, setDark] = useState(false)
+  // null = not yet mounted (avoids server/client mismatch)
+  const [dark, setDark] = useState<boolean | null>(null)
 
   useEffect(() => {
     setDark(document.documentElement.classList.contains('dark'))
@@ -32,6 +33,11 @@ export function ThemeToggle() {
     const isDark = document.documentElement.classList.toggle('dark')
     try { localStorage.setItem('theme', isDark ? 'dark' : 'light') } catch {}
     setDark(isDark)
+  }
+
+  // Render a placeholder while mounting to avoid hydration mismatch
+  if (dark === null) {
+    return <div className="w-9 h-9 rounded-full glass opacity-0" aria-hidden />
   }
 
   return (

@@ -24,7 +24,9 @@ export function buildPrompt(brief: Brief, campaignType: CampaignType): string {
       styleInstruction = `\nCOPYWRITING STYLE: ${styleConfig.prompt}`
     }
   } else if (brief.copywriting_style === 'other' && brief.copywriting_style_custom?.trim()) {
-    styleInstruction = `\nCOPYWRITING STYLE: ${brief.copywriting_style_custom.trim()}`
+    // Cap at 500 chars to prevent prompt injection / token exhaustion
+    const custom = brief.copywriting_style_custom.trim().slice(0, 500)
+    styleInstruction = `\nCOPYWRITING STYLE: ${custom}`
   }
 
   return `You are an expert Google Ads copywriter. Generate campaign assets for a ${campaignType.toUpperCase()} campaign.

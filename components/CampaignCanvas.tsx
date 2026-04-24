@@ -95,22 +95,30 @@ export function CampaignCanvas() {
     if (!filledGroups.length || !state.brief.brand_name) return
 
     update({ is_generating: true, error: null })
-    const updatedGroups = state.ad_groups.map(ag => ({ ...ag, assets: undefined }))
+    // Preserve existing assets — only re-generate groups that haven't been generated yet
+    const updatedGroups = state.ad_groups.map(ag => ({ ...ag }))
 
-    for (let i = 0; i < filledGroups.length; i++) {
-      const ag = filledGroups[i]
-      setState(prev => ({ ...prev, generating_index: i }))
+    // Find the first un-generated group to resume from (handles partial failure resume)
+    const pending = filledGroups.filter(ag => !ag.assets)
+
+    for (let i = 0; i < pending.length; i++) {
+      const ag = pending[i]
+      // Show progress relative to total filled groups, not just pending
+      const overallIdx = filledGroups.findIndex(g => g.id === ag.id)
+      setState(prev => ({ ...prev, generating_index: overallIdx }))
 
       // Build per-ad-group brief: shared campaign fields + per-group overrides
       const adGroupBrief: Brief = {
         brand_name: state.brief.brand_name!,
-        audience: state.brief.audience || '',
-        tone: state.brief.tone || 'professional',
-        goal: state.brief.goal || 'lead_gen',
-        product: ag.name,
-        url: ag.url || '',
-        usps: ag.usps.length > 0 ? ag.usps : (state.brief.usps || []),
-        keywords: ag.keywords,
+        audience:   state.brief.audience || '',
+        tone:       state.brief.tone || 'professional',
+        goal:       state.brief.goal || 'lead_gen',
+        product:    ag.name,
+        url:        ag.url || '',
+        usps:       ag.usps.length > 0 ? ag.usps : (state.brief.usps || []),
+        keywords:   ag.keywords,
+        copywriting_style:        state.brief.copywriting_style,
+        copywriting_style_custom: state.brief.copywriting_style_custom,
       }
 
       try {
@@ -125,7 +133,7 @@ export function CampaignCanvas() {
         updatedGroups[idx] = { ...updatedGroups[idx], assets: data.assets }
         setState(prev => ({ ...prev, ad_groups: [...updatedGroups] }))
       } catch (err) {
-        update({ error: `Failed on "${ag.name}": ${String(err)}`, is_generating: false, generating_index: -1 })
+        update({ error: `Failed on "${ag.name}": ${String(err)} — other groups were saved. Click Generate to resume.`, is_generating: false, generating_index: -1 })
         return
       }
     }
@@ -153,7 +161,10 @@ export function CampaignCanvas() {
   }
 
   async function handlePublish() {
-    if (!state.client_id || !state.campaign_type) return
+    if (!state.client_id || !state.campaign_type || !state.brief.brand_name?.trim()) {
+      update({ error: 'Please fill in the Brand Name before publishing.' })
+      return
+    }
     update({ is_publishing: true, error: null })
 
     let campaignId = state.campaign_id
@@ -202,8 +213,7 @@ export function CampaignCanvas() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      update({ is_publishing: false })
-      alert(`Campaign published! Google Ads ID: ${data.google_campaign_id}`)
+      update({ is_publishing: false, error: `✅ Published! Google Ads Campaign ID: ${data.google_campaign_id}` })
     } catch (err) {
       update({ error: String(err), is_publishing: false })
     }

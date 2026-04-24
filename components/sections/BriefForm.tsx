@@ -65,11 +65,15 @@ function StyleSelector({ style, customStyle, onChange, labelClass, inputClass }:
         <div className="mt-2">
           <textarea
             rows={2}
+            maxLength={500}
             className={`${inputClass} mt-1`}
             value={customStyle || ''}
             onChange={e => onChange({ copywriting_style_custom: e.target.value })}
             placeholder="Describe the style you want. e.g. 'Punchy and minimal, like Apple ads — short sentences, powerful verbs, lots of white space.'"
           />
+          <p className="text-[9px] mt-0.5 text-right" style={{ color: 'var(--text-3)' }}>
+            {(customStyle || '').length}/500
+          </p>
         </div>
       )}
     </div>

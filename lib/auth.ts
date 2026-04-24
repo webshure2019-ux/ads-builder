@@ -7,10 +7,14 @@ import { NextRequest, NextResponse } from 'next/server'
  * Works in both Node.js (API routes) and Edge (middleware) runtimes.
  */
 export async function computeSessionToken(): Promise<string> {
-  const encoder = new TextEncoder()
-  const secret = process.env.SESSION_SECRET ?? 'default-secret-change-me'
-  const password = process.env.TOOL_PASSWORD ?? ''
+  const secret   = process.env.SESSION_SECRET
+  const password = process.env.TOOL_PASSWORD
 
+  // Hard-fail at startup if secrets are missing — no insecure fallbacks
+  if (!secret)   throw new Error('SESSION_SECRET environment variable is required')
+  if (!password) throw new Error('TOOL_PASSWORD environment variable is required')
+
+  const encoder = new TextEncoder()
   const key = await crypto.subtle.importKey(
     'raw',
     encoder.encode(secret),

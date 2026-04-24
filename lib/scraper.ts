@@ -105,8 +105,9 @@ export async function scrapeUrl(url: string): Promise<ScrapedContent> {
   const response = await fetch(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WebshureAdsBot/1.0)' },
     signal: AbortSignal.timeout(10000),
+    redirect: 'error', // prevent redirect-based SSRF (DNS rebinding, open redirectors)
   })
-  if (!response.ok) throw new Error(`Failed to fetch ${url}: ${response.status}`)
+  if (!response.ok) throw new Error(`Failed to fetch page: HTTP ${response.status}`)
   const html = await response.text()
   return extractContent(html, url)
 }

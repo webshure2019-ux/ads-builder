@@ -20,9 +20,10 @@ function getPresetRange(preset: string): { start: string; end: string } {
 function getPreviousRange(start: string, end: string) {
   const s    = new Date(start)
   const e    = new Date(end)
-  const days = Math.round((e.getTime() - s.getTime()) / 86_400_000)
-  const pe   = new Date(s); pe.setDate(pe.getDate() - 1)
-  const ps   = new Date(pe); ps.setDate(ps.getDate() - days)
+  // Inclusive day count (e.g. Jan 1→Jan 7 = 7 days, not 6)
+  const days = Math.round((e.getTime() - s.getTime()) / 86_400_000) + 1
+  const pe   = new Date(s); pe.setDate(pe.getDate() - 1)       // day before current start
+  const ps   = new Date(pe); ps.setDate(ps.getDate() - (days - 1)) // same length
   return { start: toYMD(ps), end: toYMD(pe) }
 }
 
