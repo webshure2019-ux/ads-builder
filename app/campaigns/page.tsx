@@ -35,9 +35,12 @@ export default async function CampaignsPage() {
           web<span className="text-white">shure</span>
           <span className="text-white/40 font-normal text-sm ml-2">/ Campaigns</span>
         </span>
-        <Link href="/" className="bg-orange text-white font-heading font-bold text-sm px-4 py-2 rounded-full hover:bg-orange/80 transition-colors">
-          + New Campaign
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link href="/clients" className="text-white/70 text-sm hover:text-white transition-colors">Clients</Link>
+          <Link href="/" className="bg-orange text-white font-heading font-bold text-sm px-4 py-2 rounded-full hover:bg-orange/80 transition-colors">
+            + New Campaign
+          </Link>
+        </div>
       </nav>
 
       <div className="max-w-5xl mx-auto px-5 py-8">

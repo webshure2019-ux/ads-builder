@@ -187,6 +187,92 @@ export async function publishSearchCampaign(
   return campaign.resource_name.split('/').pop() || ''
 }
 
+export interface DailyMetrics {
+  date: string
+  clicks: number
+  cost: number
+  impressions: number
+  conversions: number
+  conversion_rate: number
+  ctr: number
+}
+
+export interface AccountStats {
+  daily: DailyMetrics[]
+  totals: Omit<DailyMetrics, 'date'>
+  currency: string
+}
+
+export async function getClientStats(
+  clientAccountId: string,
+  startDate: string,
+  endDate: string
+): Promise<AccountStats> {
+  const customer = getClientCustomer(clientAccountId)
+
+  const results = await customer.query(`
+    SELECT
+      segments.date,
+      metrics.clicks,
+      metrics.cost_micros,
+      metrics.impressions,
+      metrics.conversions,
+      customer.currency_code
+    FROM campaign
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.status != 'REMOVED'
+    ORDER BY segments.date ASC
+  `) as any[]
+
+  const byDate = new Map<string, { clicks: number; cost: number; impressions: number; conversions: number }>()
+  let currency = 'ZAR'
+
+  for (const r of results) {
+    const date: string = r.segments?.date
+    if (!date) continue
+    if (r.customer?.currency_code) currency = r.customer.currency_code
+    const prev = byDate.get(date) ?? { clicks: 0, cost: 0, impressions: 0, conversions: 0 }
+    byDate.set(date, {
+      clicks:      prev.clicks      + (r.metrics?.clicks      ?? 0),
+      cost:        prev.cost        + (r.metrics?.cost_micros ?? 0) / 1_000_000,
+      impressions: prev.impressions + (r.metrics?.impressions ?? 0),
+      conversions: prev.conversions + (r.metrics?.conversions ?? 0),
+    })
+  }
+
+  const daily: DailyMetrics[] = Array.from(byDate.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, d]) => ({
+      date,
+      clicks:          d.clicks,
+      cost:            Math.round(d.cost * 100) / 100,
+      impressions:     d.impressions,
+      conversions:     Math.round(d.conversions * 100) / 100,
+      conversion_rate: d.clicks > 0 ? Math.round((d.conversions / d.clicks) * 10000) / 100 : 0,
+      ctr:             d.impressions > 0 ? Math.round((d.clicks / d.impressions) * 10000) / 100 : 0,
+    }))
+
+  const sums = daily.reduce(
+    (acc, d) => ({
+      clicks:          acc.clicks      + d.clicks,
+      cost:            acc.cost        + d.cost,
+      impressions:     acc.impressions + d.impressions,
+      conversions:     acc.conversions + d.conversions,
+      conversion_rate: 0,
+      ctr:             0,
+    }),
+    { clicks: 0, cost: 0, impressions: 0, conversions: 0, conversion_rate: 0, ctr: 0 }
+  )
+
+  sums.cost            = Math.round(sums.cost * 100) / 100
+  sums.conversion_rate = sums.clicks > 0
+    ? Math.round((sums.conversions / sums.clicks) * 10000) / 100 : 0
+  sums.ctr             = sums.impressions > 0
+    ? Math.round((sums.clicks / sums.impressions) * 10000) / 100 : 0
+
+  return { daily, totals: sums, currency }
+}
+
 export async function publishPMaxCampaign(
   clientAccountId: string,
   name: string,
