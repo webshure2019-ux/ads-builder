@@ -19,8 +19,8 @@ const CHANNEL_MAP: Record<string, { icon: string; label: string }> = {
   '3':  { icon: '🖥️', label: 'Display' },
   '4':  { icon: '🛒', label: 'Shopping' },
   '6':  { icon: '🎥', label: 'Video' },
-  '9':  { icon: '⚡', label: 'PMax' },
-  '10': { icon: '⚡', label: 'PMax' },
+  '9':  { icon: '⚡', label: 'Smart' },
+  '10': { icon: '⚡', label: 'PMax'  },
   '11': { icon: '🎯', label: 'Demand Gen' },
 }
 
@@ -326,7 +326,7 @@ export function CampaignsTable({
               const ch          = CHANNEL_MAP[c.channel_type] ?? { icon: '📋', label: c.channel_type }
               const active      = isActive(c.status)
               const isDrillOpen = activeDrillId === c.id
-              const isPMax      = c.channel_type === 'PERFORMANCE_MAX' || c.channel_type === '9'
+              const isPMax      = c.channel_type === 'PERFORMANCE_MAX' || c.channel_type === '10'
 
               return (
                 <tr key={c.id} className={`transition-colors ${isDrillOpen ? 'bg-cyan/5 border-l-2 border-l-cyan' : 'hover:bg-mist/50'}`}>

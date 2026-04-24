@@ -729,7 +729,7 @@ interface Props {
 }
 
 export function CampaignDrillDown({ campaignId, campaignName, clientId, currency, startDate, endDate, initialView, channelType, onClose }: Props) {
-  const isPMax = channelType === 'PERFORMANCE_MAX' || channelType === '9'
+  const isPMax = channelType === 'PERFORMANCE_MAX' || channelType === '10'
 
   const [view, setView] = useState<DrillView>(initialView)
 
