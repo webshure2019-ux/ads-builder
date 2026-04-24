@@ -188,13 +188,17 @@ function PerfChip({ label }: { label: string }) {
 }
 
 // ─── RSA inline editor ─────────────────────────────────────────────────────────
-function AdEditor({ ad, clientId, onSaved, onCancel }: {
-  ad: AdData; clientId: string; onSaved: (h: string[], d: string[]) => void; onCancel: () => void
+function AdEditor({ ad, clientId, assets, onSaved, onCancel }: {
+  ad: AdData; clientId: string; assets: AssetPerformance[]
+  onSaved: (h: string[], d: string[]) => void; onCancel: () => void
 }) {
   const [headlines,    setHeadlines]    = useState<string[]>([...ad.headlines])
   const [descriptions, setDescriptions] = useState<string[]>([...ad.descriptions])
   const [saving,       setSaving]       = useState(false)
   const [error,        setError]        = useState('')
+
+  // Map original text → performance label (only original, unmodified text gets a label)
+  const assetMap = new Map(assets.map(a => [a.text, a.label]))
 
   async function save() {
     setSaving(true); setError('')
@@ -220,6 +224,15 @@ function AdEditor({ ad, clientId, onSaved, onCancel }: {
 
   return (
     <div className="space-y-5">
+
+      {/* Performance context banner (only shown if we have data) */}
+      {assets.length > 0 && (
+        <div className="flex items-center gap-2 bg-cyan/5 border border-cyan/20 rounded-xl px-3 py-2">
+          <span className="text-sm">📊</span>
+          <p className="text-[11px] text-teal">Performance labels are shown next to each asset based on your campaign data. Labels only appear for unchanged text.</p>
+        </div>
+      )}
+
       {/* Headlines */}
       <div>
         <div className="flex items-center justify-between mb-2">
@@ -231,25 +244,29 @@ function AdEditor({ ad, clientId, onSaved, onCancel }: {
           )}
         </div>
         <div className="space-y-2">
-          {headlines.map((h, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <div className="flex-1 relative">
-                <input
-                  value={h}
-                  maxLength={30}
-                  onChange={e => setHeadline(i, e.target.value)}
-                  className={`w-full border rounded-lg px-3 py-1.5 text-sm text-navy focus:outline-none focus:border-cyan bg-white pr-10 ${h.length > 30 ? 'border-red-400' : 'border-cloud'}`}
-                  placeholder={`Headline ${i + 1}`}
-                />
-                <span className={`absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] tabular-nums ${h.length > 28 ? 'text-amber-500' : 'text-navy/30'}`}>
-                  {h.length}/30
-                </span>
+          {headlines.map((h, i) => {
+            const perfLabel = assetMap.get(h)
+            return (
+              <div key={i} className="flex items-center gap-2">
+                <div className="flex-1 relative">
+                  <input
+                    value={h}
+                    maxLength={30}
+                    onChange={e => setHeadline(i, e.target.value)}
+                    className={`w-full border rounded-lg px-3 py-1.5 text-sm text-navy focus:outline-none focus:border-cyan bg-white pr-14 ${h.length > 30 ? 'border-red-400' : 'border-cloud'}`}
+                    placeholder={`Headline ${i + 1}`}
+                  />
+                  <span className={`absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] tabular-nums ${h.length > 28 ? 'text-amber-500' : 'text-navy/30'}`}>
+                    {h.length}/30
+                  </span>
+                </div>
+                {perfLabel && <PerfChip label={perfLabel} />}
+                {headlines.length > 3 && (
+                  <button onClick={() => removeHeadline(i)} className="text-navy/30 hover:text-red-500 transition-colors text-sm px-1 flex-shrink-0">✕</button>
+                )}
               </div>
-              {headlines.length > 3 && (
-                <button onClick={() => removeHeadline(i)} className="text-navy/30 hover:text-red-500 transition-colors text-sm px-1">✕</button>
-              )}
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
@@ -264,26 +281,32 @@ function AdEditor({ ad, clientId, onSaved, onCancel }: {
           )}
         </div>
         <div className="space-y-2">
-          {descriptions.map((d, i) => (
-            <div key={i} className="flex items-start gap-2">
-              <div className="flex-1 relative">
-                <textarea
-                  rows={2}
-                  value={d}
-                  maxLength={90}
-                  onChange={e => setDescription(i, e.target.value)}
-                  className={`w-full border rounded-lg px-3 py-1.5 text-sm text-navy focus:outline-none focus:border-cyan bg-white resize-none pr-10 ${d.length > 90 ? 'border-red-400' : 'border-cloud'}`}
-                  placeholder={`Description ${i + 1}`}
-                />
-                <span className={`absolute right-2.5 bottom-2 text-[10px] tabular-nums ${d.length > 85 ? 'text-amber-500' : 'text-navy/30'}`}>
-                  {d.length}/90
-                </span>
+          {descriptions.map((d, i) => {
+            const perfLabel = assetMap.get(d)
+            return (
+              <div key={i} className="flex items-start gap-2">
+                <div className="flex-1 relative">
+                  <textarea
+                    rows={2}
+                    value={d}
+                    maxLength={90}
+                    onChange={e => setDescription(i, e.target.value)}
+                    className={`w-full border rounded-lg px-3 py-1.5 text-sm text-navy focus:outline-none focus:border-cyan bg-white resize-none pr-14 ${d.length > 90 ? 'border-red-400' : 'border-cloud'}`}
+                    placeholder={`Description ${i + 1}`}
+                  />
+                  <span className={`absolute right-2.5 bottom-2 text-[10px] tabular-nums ${d.length > 85 ? 'text-amber-500' : 'text-navy/30'}`}>
+                    {d.length}/90
+                  </span>
+                </div>
+                <div className="flex flex-col items-center gap-1 pt-1 flex-shrink-0">
+                  {perfLabel && <PerfChip label={perfLabel} />}
+                  {descriptions.length > 2 && (
+                    <button onClick={() => removeDescription(i)} className="text-navy/30 hover:text-red-500 transition-colors text-sm px-1">✕</button>
+                  )}
+                </div>
               </div>
-              {descriptions.length > 2 && (
-                <button onClick={() => removeDescription(i)} className="mt-1 text-navy/30 hover:text-red-500 transition-colors text-sm px-1">✕</button>
-              )}
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
@@ -333,18 +356,31 @@ function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: s
     finally { setToggling(false) }
   }
 
-  async function loadInsights() {
-    if (assetsLoaded) { setShowInsights(s => !s); return }
+  async function fetchAssets(): Promise<AssetPerformance[]> {
+    if (assetsLoaded) return assets
     setAssetsLoad(true); setAssetsErr('')
     try {
       const res = await fetch(`/api/ad-assets?client_account_id=${clientId}&ad_group_id=${ad.ad_group_id}&ad_id=${ad.id}`)
       const d = await res.json()
       if (!res.ok) throw new Error(d.error)
-      setAssets(d.assets ?? [])
+      const loaded: AssetPerformance[] = d.assets ?? []
+      setAssets(loaded)
       setAssetsLoaded(true)
-      setShowInsights(true)
-    } catch (e: any) { setAssetsErr(e.message) }
+      return loaded
+    } catch (e: any) { setAssetsErr(e.message); return [] }
     finally { setAssetsLoad(false) }
+  }
+
+  async function loadInsights() {
+    if (assetsLoaded) { setShowInsights(s => !s); return }
+    await fetchAssets()
+    setShowInsights(true)
+  }
+
+  async function openEditor() {
+    setEditing(true)
+    // Pre-load performance data so labels appear immediately in the editor
+    if (!assetsLoaded) fetchAssets()
   }
 
   const typeLabel = AD_TYPE_MAP[ad.type] ?? ad.type
@@ -380,6 +416,7 @@ function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: s
           <AdEditor
             ad={ad}
             clientId={clientId}
+            assets={assets}
             onSaved={(h, d) => { setAd(prev => ({ ...prev, headlines: h, descriptions: d })); setEditing(false) }}
             onCancel={() => setEditing(false)}
           />
@@ -433,7 +470,7 @@ function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: s
             <div className="flex items-center gap-3 pt-1 flex-wrap">
               {isRSA && (
                 <button
-                  onClick={() => setEditing(true)}
+                  onClick={openEditor}
                   className="text-xs font-bold text-cyan hover:text-cyan/70 border border-cyan/30 hover:border-cyan px-3 py-1.5 rounded-lg transition-all"
                 >
                   ✏️ Edit Ad

@@ -663,7 +663,7 @@ export async function getAdAssetPerformance(
   const results = await customer.query(`
     SELECT
       ad_group_ad_asset_view.field_type,
-      ad_group_ad_asset_view.asset_performance_label,
+      ad_group_ad_asset_view.performance_label,
       asset.text_asset.text
     FROM ad_group_ad_asset_view
     WHERE ad_group_ad.resource_name = '${resourceName}'
@@ -673,7 +673,7 @@ export async function getAdAssetPerformance(
     .map((r: any) => ({
       text:       String(r.asset?.text_asset?.text ?? '').trim(),
       field_type: String(r.ad_group_ad_asset_view?.field_type ?? '').toUpperCase(),
-      label:      String(r.ad_group_ad_asset_view?.asset_performance_label ?? 'UNRATED').toUpperCase(),
+      label:      String(r.ad_group_ad_asset_view?.performance_label ?? 'UNRATED').toUpperCase(),
     }))
     .filter(a => a.text)
 }
