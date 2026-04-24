@@ -32,6 +32,13 @@ export async function GET(request: NextRequest) {
     const actions = await getConversionBreakdown(clientId, startDate, endDate)
     return NextResponse.json({ actions })
   } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? 'Failed to load conversion breakdown' }, { status: 500 })
+    // The google-ads-api library sometimes wraps errors in non-standard shapes
+    const msg =
+      err?.message ||
+      err?.errors?.[0]?.message ||
+      err?.error?.message ||
+      JSON.stringify(err)
+    console.error('[conversion-breakdown]', msg)
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

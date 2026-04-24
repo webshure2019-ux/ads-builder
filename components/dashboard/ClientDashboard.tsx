@@ -270,27 +270,50 @@ function ExpandedChart({ cfg, daily, prevDaily, currency, onClose }: {
 }
 
 // ─── Conversion category icons ─────────────────────────────────────────────────
+// Covers both the string enum name and common numeric values returned by the API
 const CONV_CATEGORY_ICONS: Record<string, string> = {
-  PURCHASE:           '🛒',
-  LEAD:               '📋',
-  SUBMIT_LEAD_FORM:   '📝',
-  SIGNUP:             '✍️',
-  PHONE_CALL_LEAD:    '📞',
-  IMPORTED_LEAD:      '📥',
-  BOOK_APPOINTMENT:   '📅',
-  REQUEST_QUOTE:      '💬',
-  GET_DIRECTIONS:     '📍',
-  OUTBOUND_CLICK:     '🔗',
-  PAGE_VIEW:          '👁️',
-  DOWNLOAD:           '⬇️',
-  ADD_TO_CART:        '🛍️',
-  BEGIN_CHECKOUT:     '💳',
-  SUBSCRIBE_PAID:     '💰',
-  CONTACT:            '📬',
-  STORE_VISIT:        '🏪',
-  STORE_SALE:         '🏷️',
-  ENGAGEMENT:         '⭐',
-  DEFAULT:            '🎯',
+  PURCHASE:              '🛒',
+  PURCHASE_AND_SALE:     '🛒',
+  LEAD:                  '📋',
+  SUBMIT_LEAD_FORM:      '📝',
+  SIGNUP:                '✍️',
+  PHONE_CALL_LEAD:       '📞',
+  IMPORTED_LEAD:         '📥',
+  BOOK_APPOINTMENT:      '📅',
+  REQUEST_QUOTE:         '💬',
+  GET_DIRECTIONS:        '📍',
+  OUTBOUND_CLICK:        '🔗',
+  PAGE_VIEW:             '👁️',
+  DOWNLOAD:              '⬇️',
+  ADD_TO_CART:           '🛍️',
+  BEGIN_CHECKOUT:        '💳',
+  SUBSCRIBE_PAID:        '💰',
+  CONTACT:               '📬',
+  STORE_VISIT:           '🏪',
+  STORE_SALE:            '🏷️',
+  ENGAGEMENT:            '⭐',
+  DEFAULT:               '🎯',
+  // Numeric enum fallbacks
+  '1':  '🎯',  // DEFAULT
+  '2':  '👁️', // PAGE_VIEW
+  '3':  '🛒',  // PURCHASE_AND_SALE
+  '4':  '✍️', // SIGNUP
+  '5':  '📋',  // LEAD
+  '6':  '⬇️', // DOWNLOAD
+  '7':  '🛍️', // ADD_TO_CART
+  '8':  '💳',  // BEGIN_CHECKOUT
+  '9':  '💰',  // SUBSCRIBE_PAID
+  '10': '📞',  // PHONE_CALL_LEAD
+  '11': '📥',  // IMPORTED_LEAD
+  '12': '📝',  // SUBMIT_LEAD_FORM
+  '13': '📅',  // BOOK_APPOINTMENT
+  '14': '💬',  // REQUEST_QUOTE
+  '15': '📍',  // GET_DIRECTIONS
+  '16': '🔗',  // OUTBOUND_CLICK
+  '17': '📬',  // CONTACT
+  '18': '⭐',  // ENGAGEMENT
+  '19': '🏪',  // STORE_VISIT
+  '20': '🏷️', // STORE_SALE
 }
 
 // ─── Conversion breakdown panel ────────────────────────────────────────────────

@@ -390,30 +390,34 @@ export async function getConversionBreakdown(
 
   const customer = getClientCustomer(clientAccountId)
 
+  // Query FROM campaign segmented by conversion action — this is the correct
+  // way to get date-ranged conversion breakdown. FROM conversion_action does
+  // not support date segmentation in GAQL.
   const results = await customer.query(`
     SELECT
-      conversion_action.name,
-      conversion_action.category,
+      segments.conversion_action_name,
+      segments.conversion_action_category,
       metrics.conversions,
       metrics.conversions_value
-    FROM conversion_action
+    FROM campaign
     WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.status != 'REMOVED'
       AND metrics.conversions > 0
-    ORDER BY metrics.conversions DESC
   `) as any[]
 
-  // Aggregate by action name across multiple date rows if any
+  // Aggregate rows by conversion action name (multiple rows per date segment)
   const byAction = new Map<string, { category: string; count: number; value: number }>()
 
   for (const r of results) {
-    const name = String(r.conversion_action?.name ?? 'Unknown')
+    const name = String(r.segments?.conversion_action_name ?? '').trim()
+    if (!name) continue
     const prev = byAction.get(name)
     if (prev) {
       prev.count += r.metrics?.conversions       ?? 0
       prev.value += r.metrics?.conversions_value ?? 0
     } else {
       byAction.set(name, {
-        category: String(r.conversion_action?.category ?? 'DEFAULT'),
+        category: String(r.segments?.conversion_action_category ?? 'DEFAULT'),
         count:    r.metrics?.conversions       ?? 0,
         value:    r.metrics?.conversions_value ?? 0,
       })
