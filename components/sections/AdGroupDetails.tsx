@@ -108,10 +108,32 @@ export function AdGroupDetails({ adGroups, onChange }: Props) {
       ]
       updateGroup(ag.id, { keywords: merged })
     } catch (err) {
-      setKwError(prev => ({ ...prev, [ag.id]: String(err) }))
+      // Show a helpful message distinguishing API-not-connected from other errors
+      const msg = String(err).toLowerCase().includes('fetch')
+        ? 'Google Ads API not connected yet — add your API keys in Vercel, or add keywords manually below'
+        : `Failed to fetch suggestions — add keywords manually below`
+      setKwError(prev => ({ ...prev, [ag.id]: msg }))
     } finally {
       setLoadingKw(prev => ({ ...prev, [ag.id]: false }))
     }
+  }
+
+  function addManualKeyword(ag: AdGroup) {
+    const raw = seeds[ag.id] || ''
+    // Support comma-separated manual entry when API is unavailable
+    const terms = raw.split(',').map(s => s.trim()).filter(Boolean)
+    if (!terms.length) return
+    const newKeywords: Keyword[] = terms
+      .filter(t => !ag.keywords.find(k => k.text.toLowerCase() === t.toLowerCase()))
+      .map(t => ({ text: t, match_type: 'exact' as MatchType, selected: true }))
+    if (!newKeywords.length) return
+    updateGroup(ag.id, { keywords: [...ag.keywords, ...newKeywords] })
+    setSeeds(prev => ({ ...prev, [ag.id]: '' }))
+    setKwError(prev => ({ ...prev, [ag.id]: '' }))
+  }
+
+  function removeKeyword(ag: AdGroup, text: string) {
+    updateGroup(ag.id, { keywords: ag.keywords.filter(k => k.text !== text) })
   }
 
   function toggleKeyword(ag: AdGroup, text: string) {
@@ -292,7 +314,11 @@ export function AdGroupDetails({ adGroups, onChange }: Props) {
                 placeholder="seed keywords, comma separated"
                 value={seeds[activeGroup.id] || ''}
                 onChange={e => setSeeds(prev => ({ ...prev, [activeGroup.id]: e.target.value }))}
-                onKeyDown={e => e.key === 'Enter' && handleResearchKeywords(activeGroup)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    kwError[activeGroup.id] ? addManualKeyword(activeGroup) : handleResearchKeywords(activeGroup)
+                  }
+                }}
               />
               <button
                 onClick={() => handleResearchKeywords(activeGroup)}
@@ -303,18 +329,33 @@ export function AdGroupDetails({ adGroups, onChange }: Props) {
               </button>
             </div>
             {kwError[activeGroup.id] && (
-              <p className="text-red-500 text-xs mb-2">{kwError[activeGroup.id]}</p>
+              <div className="mb-2 space-y-1">
+                <p className="text-amber-600 text-xs">{kwError[activeGroup.id]}</p>
+                <button
+                  onClick={() => addManualKeyword(activeGroup)}
+                  disabled={!seeds[activeGroup.id]?.trim()}
+                  className="text-xs font-heading font-bold text-white bg-teal px-3 py-1 rounded-full hover:bg-teal/80 disabled:opacity-40 transition-colors"
+                >
+                  + Add Manually
+                </button>
+              </div>
             )}
             {(activeGroup.keywords || []).length > 0 && (
               <>
                 <div className="flex flex-wrap gap-2">
                   {activeGroup.keywords.map(kw => (
-                    <KeywordChip
-                      key={kw.text}
-                      keyword={kw}
-                      onToggleSelect={text => toggleKeyword(activeGroup, text)}
-                      onToggleMatchType={(text, mt) => toggleKeywordMatch(activeGroup, text, mt)}
-                    />
+                    <div key={kw.text} className="flex items-center gap-1">
+                      <KeywordChip
+                        keyword={kw}
+                        onToggleSelect={text => toggleKeyword(activeGroup, text)}
+                        onToggleMatchType={(text, mt) => toggleKeywordMatch(activeGroup, text, mt)}
+                      />
+                      <button
+                        onClick={() => removeKeyword(activeGroup, kw.text)}
+                        className="text-navy/30 hover:text-red-400 transition-colors text-sm font-bold -ml-1"
+                        title="Remove keyword"
+                      >×</button>
+                    </div>
                   ))}
                 </div>
                 <p className="text-xs text-teal mt-2">

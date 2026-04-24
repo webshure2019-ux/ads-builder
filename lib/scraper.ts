@@ -11,6 +11,26 @@ export function inferTone(text: string): ToneType {
   return 'professional'
 }
 
+// Patterns that indicate a line is NOT a useful USP
+const NOISE_PATTERNS = [
+  /^(our|we|the|a|an|is|are|it|this|that|these|those|my|your)$/i, // single stop words
+  /^(our|we)\s*$/i,
+  /cookie/i, /privacy/i, /terms/i, /copyright/i, /all rights/i,
+  /click here/i, /read more/i, /learn more/i, /find out/i,
+  /^\d+$/, // just a number
+  /^[^a-zA-Z]*$/, // no letters at all
+]
+
+function isGoodUsp(text: string): boolean {
+  if (text.length < 10) return false          // too short to be meaningful
+  if (text.length > 110) return false         // too long
+  if (!text.includes(' ')) return false       // single word
+  if (NOISE_PATTERNS.some(p => p.test(text))) return false
+  // Must contain at least 2 words
+  if (text.trim().split(/\s+/).length < 2) return false
+  return true
+}
+
 export function extractContent(html: string, _url: string): ScrapedContent {
   const $ = cheerio.load(html)
 
@@ -23,24 +43,32 @@ export function extractContent(html: string, _url: string): ScrapedContent {
     .filter(t => t.length > 10)
     .slice(0, 8)
 
-  // USP extraction: try <li> first, then fall back to subheadings and short paragraphs
+  // Strategy 1: <li> items — highest signal, most sites put benefits in lists
   const listItems = $('li').map((_, el) => $(el).text().trim()).get()
-    .filter(t => t.length > 5 && t.length < 120)
+    .filter(isGoodUsp)
 
+  // Strategy 2: <h2>/<h3> subheadings — section headings often describe benefits
   const subheadings = $('h2, h3').map((_, el) => $(el).text().trim()).get()
-    .filter(t => t.length > 5 && t.length < 80)
+    .filter(isGoodUsp)
 
-  const shortParagraphs = $('p, span').map((_, el) => $(el).text().trim()).get()
-    .filter(t => t.length > 10 && t.length < 100)
+  // Strategy 3: Short standalone <p> tags — punchy benefit statements
+  const shortParas = $('p').map((_, el) => $(el).text().trim()).get()
+    .filter(t => isGoodUsp(t) && t.length < 90)
 
-  // Build USP candidates: prefer li items, then headings, then short paragraphs
-  const uspCandidates = listItems.length >= 3
-    ? listItems
-    : [...listItems, ...subheadings, ...shortParagraphs]
+  // Strategy 4: Meta description as last resort (always a human-written benefit summary)
+  const metaUsps = metaDescription.length > 15 ? [metaDescription] : []
 
-  const usps = dedupe(uspCandidates)
-    .filter(t => !t.toLowerCase().includes('cookie') && !t.toLowerCase().includes('privacy'))
-    .slice(0, 6)
+  // Pick the best source — prefer li items if we have enough, otherwise blend
+  let uspCandidates: string[]
+  if (listItems.length >= 3) {
+    uspCandidates = listItems
+  } else if (subheadings.length >= 3) {
+    uspCandidates = [...listItems, ...subheadings]
+  } else {
+    uspCandidates = [...listItems, ...subheadings, ...shortParas, ...metaUsps]
+  }
+
+  const usps = dedupe(uspCandidates).slice(0, 6)
 
   const raw_text = [...headings, ...paragraphs].join('\n').slice(0, 3000)
   const audience = inferAudience(raw_text + ' ' + metaDescription)
@@ -57,7 +85,7 @@ export function extractContent(html: string, _url: string): ScrapedContent {
 function dedupe(items: string[]): string[] {
   const seen = new Set<string>()
   return items.filter(item => {
-    const key = item.toLowerCase()
+    const key = item.toLowerCase().trim()
     if (seen.has(key)) return false
     seen.add(key)
     return true
