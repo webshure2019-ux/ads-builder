@@ -1,6 +1,6 @@
 // lib/claude.ts
 import Anthropic from '@anthropic-ai/sdk'
-import { Brief, CampaignType, GeneratedAssets } from '@/types'
+import { Brief, CampaignType, GeneratedAssets, COPYWRITING_STYLES } from '@/types'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -16,6 +16,17 @@ export function buildPrompt(brief: Brief, campaignType: CampaignType): string {
 
   const landingPage = brief.url ? `\nLANDING PAGE: ${brief.url}` : ''
 
+  // Build copywriting style instruction
+  let styleInstruction = ''
+  if (brief.copywriting_style && brief.copywriting_style !== 'other') {
+    const styleConfig = COPYWRITING_STYLES[brief.copywriting_style]
+    if (styleConfig) {
+      styleInstruction = `\nCOPYWRITING STYLE: ${styleConfig.prompt}`
+    }
+  } else if (brief.copywriting_style === 'other' && brief.copywriting_style_custom?.trim()) {
+    styleInstruction = `\nCOPYWRITING STYLE: ${brief.copywriting_style_custom.trim()}`
+  }
+
   return `You are an expert Google Ads copywriter. Generate campaign assets for a ${campaignType.toUpperCase()} campaign.
 
 BRAND: ${brief.brand_name}
@@ -24,7 +35,7 @@ TARGET AUDIENCE: ${brief.audience}
 KEY USPs: ${usps}${landingPage}
 TONE: ${brief.tone}
 CAMPAIGN GOAL: ${brief.goal}
-SELECTED KEYWORDS: ${selectedKeywords}
+SELECTED KEYWORDS: ${selectedKeywords}${styleInstruction}
 
 REQUIREMENTS:
 ${getAssetRequirements(campaignType)}
@@ -36,7 +47,7 @@ RULES:
 - At least 3 headlines must include the primary keyword
 - At least 2 headlines must contain a clear call to action
 - No pinning suggestions (do not include pin_position)
-- Match the specified tone throughout all copy
+- Match the specified tone throughout all copy${styleInstruction ? '\n- Apply the specified copywriting style consistently across all copy' : ''}
 - No ALL CAPS words, no excessive punctuation (Google policy)
 
 Return ONLY valid JSON (no markdown fences, no explanation):

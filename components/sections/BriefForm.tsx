@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { Brief, ToneType, GoalType } from '@/types'
+import { Brief, ToneType, GoalType, CopywritingStyle, COPYWRITING_STYLES } from '@/types'
 
 interface Props {
   brief: Partial<Brief>
@@ -14,6 +14,67 @@ const GOALS: { value: GoalType; label: string }[] = [
   { value: 'sales', label: 'Sales / eCommerce' },
   { value: 'awareness', label: 'Brand Awareness' },
 ]
+
+const STYLE_OPTIONS: { value: CopywritingStyle; label: string; tagline: string; emoji: string }[] = [
+  ...Object.entries(COPYWRITING_STYLES).map(([key, cfg]) => ({
+    value: key as CopywritingStyle,
+    label: cfg.label,
+    tagline: cfg.tagline,
+    emoji: cfg.emoji,
+  })),
+  { value: 'other', label: 'Other', tagline: 'Describe your own style', emoji: '✏️' },
+]
+
+interface StyleSelectorProps {
+  style: CopywritingStyle | undefined
+  customStyle: string | undefined
+  onChange: (updates: Partial<Brief>) => void
+  labelClass: string
+  inputClass: string
+}
+
+function StyleSelector({ style, customStyle, onChange, labelClass, inputClass }: StyleSelectorProps) {
+  return (
+    <div>
+      <label className={labelClass}>Copywriting Style</label>
+      <p className="text-[10px] text-navy/40 mb-2">Choose the voice and style for your ad copy</p>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {STYLE_OPTIONS.map(opt => {
+          const isSelected = style === opt.value
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => onChange({ copywriting_style: opt.value })}
+              className={`text-left rounded-lg border px-3 py-2.5 transition-all ${
+                isSelected
+                  ? 'border-cyan bg-cyan/10 text-navy'
+                  : 'border-cloud bg-mist text-navy/60 hover:border-cyan/50 hover:text-navy'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="text-base leading-none">{opt.emoji}</span>
+                <span className="text-[11px] font-heading font-bold">{opt.label}</span>
+              </div>
+              <p className="text-[9px] text-navy/50">{opt.tagline}</p>
+            </button>
+          )
+        })}
+      </div>
+      {style === 'other' && (
+        <div className="mt-2">
+          <textarea
+            rows={2}
+            className={`${inputClass} mt-1`}
+            value={customStyle || ''}
+            onChange={e => onChange({ copywriting_style_custom: e.target.value })}
+            placeholder="Describe the style you want. e.g. 'Punchy and minimal, like Apple ads — short sentences, powerful verbs, lots of white space.'"
+          />
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function BriefForm({ brief, onChange, searchMode = false }: Props) {
   const [scraping, setScraping] = useState(false)
@@ -90,6 +151,14 @@ export function BriefForm({ brief, onChange, searchMode = false }: Props) {
             </select>
           </div>
         </div>
+
+        <StyleSelector
+          style={brief.copywriting_style}
+          customStyle={brief.copywriting_style_custom}
+          onChange={onChange}
+          labelClass={label}
+          inputClass={input}
+        />
       </div>
     )
   }
@@ -161,6 +230,14 @@ export function BriefForm({ brief, onChange, searchMode = false }: Props) {
           </select>
         </div>
       </div>
+
+      <StyleSelector
+        style={brief.copywriting_style}
+        customStyle={brief.copywriting_style_custom}
+        onChange={onChange}
+        labelClass={label}
+        inputClass={input}
+      />
     </div>
   )
 }

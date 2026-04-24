@@ -1,6 +1,41 @@
 // types/index.ts
 export type CampaignType = 'search' | 'pmax' | 'demand_gen' | 'display' | 'shopping' | 'video'
 export type PpcPackage = 'ppc1' | 'ppc2' | 'ppc3'
+export type CopywritingStyle = 'frank_kern' | 'billy_gene' | 'alex_hormozi' | 'tony_robbins' | 'other'
+
+export interface CopywritingStyleConfig {
+  label: string
+  tagline: string
+  emoji: string
+  prompt: string
+}
+
+export const COPYWRITING_STYLES: Record<Exclude<CopywritingStyle, 'other'>, CopywritingStyleConfig> = {
+  frank_kern: {
+    label: 'Frank Kern',
+    tagline: 'Casual & story-driven',
+    emoji: '📖',
+    prompt: "Write in Frank Kern's style: casual, conversational, and story-driven. Use plain everyday language as if talking to a friend. Focus on desire and transformation. Make it feel personal and relatable — never corporate or stiff.",
+  },
+  billy_gene: {
+    label: 'Billy Gene',
+    tagline: 'Bold & attention-grabbing',
+    emoji: '⚡',
+    prompt: "Write in Billy Gene's style: bold, energetic, and attention-grabbing. Use pattern interrupts and be irreverent and fun. Use very direct, punchy calls to action. Make it exciting and impossible to ignore.",
+  },
+  alex_hormozi: {
+    label: 'Alex Hormozi',
+    tagline: 'Direct & value-packed',
+    emoji: '💰',
+    prompt: "Write in Alex Hormozi's style: ultra-direct, value-focused, and no-nonsense. Quantify value with specific numbers wherever possible. Pre-empt objections before they arise. Be dense with proof and specifics. Make the offer irresistible by showing exactly what they get and why they'd be crazy to say no.",
+  },
+  tony_robbins: {
+    label: 'Tony Robbins',
+    tagline: 'Inspiring & transformational',
+    emoji: '🔥',
+    prompt: "Write in Tony Robbins's style: inspirational, empowering, and emotionally charged. Focus on transformation, unlocking potential, and breaking through limits. Use high-energy motivational language that makes people feel they can achieve anything. Lead with possibility.",
+  },
+}
 
 export interface PpcPackageConfig {
   label: string
@@ -89,6 +124,8 @@ export interface Brief {
   goal: GoalType
   brand_name: string
   keywords: Keyword[]
+  copywriting_style?: CopywritingStyle
+  copywriting_style_custom?: string  // used when copywriting_style === 'other'
 }
 
 export interface Sitelink {
