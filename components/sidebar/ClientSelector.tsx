@@ -20,26 +20,19 @@ export function ClientSelector({ selectedId, onSelect }: Props) {
       <h3 className="font-heading font-bold text-sm text-navy mb-3">Client Account</h3>
       {loading ? (
         <p className="text-xs text-teal">Loading accounts...</p>
+      ) : clients.length === 0 ? (
+        <p className="text-xs text-teal">No client accounts found under this MCC.</p>
       ) : (
-        <div className="space-y-1.5">
+        <select
+          value={selectedId || ''}
+          onChange={e => e.target.value && onSelect(e.target.value)}
+          className="w-full bg-mist border border-cloud rounded-lg px-3 py-2.5 text-sm text-navy focus:outline-none focus:border-cyan appearance-none cursor-pointer"
+        >
+          <option value="">Select a client...</option>
           {clients.map(c => (
-            <button
-              key={c.id}
-              onClick={() => onSelect(c.id)}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
-                selectedId === c.id
-                  ? 'bg-cloud border border-cyan font-semibold text-navy'
-                  : 'border border-cloud text-navy hover:bg-mist'
-              }`}
-            >
-              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${selectedId === c.id ? 'bg-cyan' : 'bg-cloud'}`} />
-              {c.name}
-            </button>
+            <option key={c.id} value={c.id}>{c.name}</option>
           ))}
-          {clients.length === 0 && (
-            <p className="text-xs text-teal">No client accounts found under this MCC.</p>
-          )}
-        </div>
+        </select>
       )}
     </div>
   )
