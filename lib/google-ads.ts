@@ -646,6 +646,96 @@ export async function getAds(
     .sort((a, b) => b.cost - a.cost)
 }
 
+// ─── Asset Groups (Performance Max) ──────────────────────────────────────────
+export interface AssetGroupMetrics {
+  id:              string
+  name:            string
+  status:          string
+  final_urls:      string[]
+  impressions:     number
+  clicks:          number
+  cost:            number
+  conversions:     number
+  ctr:             number
+  conversion_rate: number
+}
+
+export async function getAssetGroups(
+  clientAccountId: string,
+  campaignId: string,
+  startDate: string,
+  endDate: string
+): Promise<AssetGroupMetrics[]> {
+  validateDate(startDate, 'start_date')
+  validateDate(endDate, 'end_date')
+  validateCampaignId(campaignId)
+  if (startDate > endDate) throw new Error('start_date must be before end_date')
+
+  const customer = getClientCustomer(clientAccountId)
+
+  const results = await customer.query(`
+    SELECT
+      asset_group.id,
+      asset_group.name,
+      asset_group.status,
+      asset_group.final_urls,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.cost_micros,
+      metrics.conversions
+    FROM asset_group
+    WHERE campaign.id = ${campaignId}
+      AND segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND asset_group.status != 'REMOVED'
+    ORDER BY metrics.cost_micros DESC
+  `) as any[]
+
+  const byGroup = new Map<string, {
+    name: string; status: string; final_urls: string[]
+    impressions: number; clicks: number; costMicros: number; conversions: number
+  }>()
+
+  for (const r of results) {
+    const id = String(r.asset_group?.id ?? '')
+    if (!id) continue
+    const prev = byGroup.get(id)
+    if (prev) {
+      prev.impressions += r.metrics?.impressions ?? 0
+      prev.clicks      += r.metrics?.clicks      ?? 0
+      prev.costMicros  += r.metrics?.cost_micros ?? 0
+      prev.conversions += r.metrics?.conversions ?? 0
+    } else {
+      byGroup.set(id, {
+        name:        r.asset_group?.name      ?? 'Unknown',
+        status:      String(r.asset_group?.status ?? 'UNKNOWN'),
+        final_urls:  Array.isArray(r.asset_group?.final_urls) ? r.asset_group.final_urls : [],
+        impressions: r.metrics?.impressions ?? 0,
+        clicks:      r.metrics?.clicks      ?? 0,
+        costMicros:  r.metrics?.cost_micros ?? 0,
+        conversions: r.metrics?.conversions ?? 0,
+      })
+    }
+  }
+
+  return Array.from(byGroup.entries())
+    .map(([id, g]) => {
+      const cost = Math.round(g.costMicros / 1_000_000 * 100) / 100
+      return {
+        id,
+        name:            g.name,
+        status:          g.status,
+        final_urls:      g.final_urls,
+        impressions:     g.impressions,
+        clicks:          g.clicks,
+        cost,
+        conversions:     Math.round(g.conversions * 100) / 100,
+        ctr:             g.impressions > 0 ? Math.round((g.clicks / g.impressions) * 10000) / 100 : 0,
+        conversion_rate: g.clicks > 0 ? Math.round((g.conversions / g.clicks) * 10000) / 100 : 0,
+      }
+    })
+    .sort((a, b) => b.cost - a.cost)
+}
+
 // ─── Asset-level performance labels ───────────────────────────────────────────
 export async function getAdAssetPerformance(
   clientAccountId: string,

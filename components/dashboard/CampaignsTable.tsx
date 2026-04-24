@@ -221,7 +221,7 @@ export function CampaignsTable({
   currency:      string
   clientId:      string
   activeDrillId?: string
-  onDrill?:      (id: string, name: string, view: DrillView) => void
+  onDrill?:      (id: string, name: string, view: DrillView, channelType: string) => void
 }) {
   // Local copy so optimistic updates don't require a full refetch
   const [campaigns, setCampaigns] = useState<CampaignMetrics[]>(initialCampaigns)
@@ -326,6 +326,7 @@ export function CampaignsTable({
               const ch          = CHANNEL_MAP[c.channel_type] ?? { icon: '📋', label: c.channel_type }
               const active      = isActive(c.status)
               const isDrillOpen = activeDrillId === c.id
+              const isPMax      = c.channel_type === 'PERFORMANCE_MAX' || c.channel_type === '9'
 
               return (
                 <tr key={c.id} className={`transition-colors ${isDrillOpen ? 'bg-cyan/5 border-l-2 border-l-cyan' : 'hover:bg-mist/50'}`}>
@@ -388,27 +389,29 @@ export function CampaignsTable({
                   <td className="px-4 py-3.5">
                     <div className="flex gap-1.5 justify-end">
                       <button
-                        onClick={() => onDrill?.(c.id, c.name, 'ad_groups')}
+                        onClick={() => onDrill?.(c.id, c.name, 'ad_groups', c.channel_type)}
                         className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-all whitespace-nowrap ${
                           isDrillOpen
                             ? 'bg-cyan/10 border-cyan text-navy'
                             : 'border-cloud text-navy/60 hover:border-cyan/50 hover:text-navy hover:bg-mist'
                         }`}
-                        title="View ad groups"
+                        title={isPMax ? 'View asset groups' : 'View ad groups'}
                       >
-                        👥 Ad Groups
+                        {isPMax ? '🎯 Asset Groups' : '👥 Ad Groups'}
                       </button>
-                      <button
-                        onClick={() => onDrill?.(c.id, c.name, 'ads')}
-                        className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-all whitespace-nowrap ${
-                          isDrillOpen
-                            ? 'bg-cyan/10 border-cyan text-navy'
-                            : 'border-cloud text-navy/60 hover:border-cyan/50 hover:text-navy hover:bg-mist'
-                        }`}
-                        title="View ads"
-                      >
-                        📄 Ads
-                      </button>
+                      {!isPMax && (
+                        <button
+                          onClick={() => onDrill?.(c.id, c.name, 'ads', c.channel_type)}
+                          className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-all whitespace-nowrap ${
+                            isDrillOpen
+                              ? 'bg-cyan/10 border-cyan text-navy'
+                              : 'border-cloud text-navy/60 hover:border-cyan/50 hover:text-navy hover:bg-mist'
+                          }`}
+                          title="View ads"
+                        >
+                          📄 Ads
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

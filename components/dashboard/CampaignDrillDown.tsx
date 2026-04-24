@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import type { AdGroupMetrics, AdData, AssetPerformance } from '@/lib/google-ads'
+import type { AdGroupMetrics, AdData, AssetPerformance, AssetGroupMetrics } from '@/lib/google-ads'
 
 // ─── Maps ──────────────────────────────────────────────────────────────────────
 const AD_TYPE_MAP: Record<string, string> = {
@@ -197,6 +197,108 @@ function AdGroupsTab({ adGroups, currency, clientId, loading, error }: {
             <td className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums">{totals.conversions.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
             <td className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums">{totals.clicks > 0 ? ((totals.conversions / totals.clicks) * 100).toFixed(2) : '0.00'}%</td>
             <td />
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+// ─── Asset Groups tab (Performance Max) ───────────────────────────────────────
+type AgxSortCol = 'name' | 'impressions' | 'clicks' | 'ctr' | 'cost' | 'conversions' | 'conversion_rate'
+
+function AssetGroupsTab({ assetGroups, currency, loading, error }: {
+  assetGroups: AssetGroupMetrics[]; currency: string; loading: boolean; error: string
+}) {
+  const [sortCol, setSortCol] = useState<AgxSortCol>('cost')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+
+  if (loading) return <PanelSpinner label="Loading asset groups…" />
+  if (error)   return <PanelError msg={error} />
+  if (assetGroups.length === 0) return <div className="text-center py-16 text-teal text-sm">No asset groups found for this period.</div>
+
+  function toggleSort(col: AgxSortCol) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('desc') }
+  }
+
+  const sorted = [...assetGroups].sort((a, b) => {
+    const av = a[sortCol], bv = b[sortCol]
+    if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv as string) : (bv as string).localeCompare(av)
+    return sortDir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number)
+  })
+
+  const totals = assetGroups.reduce(
+    (acc, g) => ({ impressions: acc.impressions + g.impressions, clicks: acc.clicks + g.clicks, cost: acc.cost + g.cost, conversions: acc.conversions + g.conversions }),
+    { impressions: 0, clicks: 0, cost: 0, conversions: 0 }
+  )
+
+  function SortTh({ col, label, align = 'right' }: { col: AgxSortCol; label: string; align?: 'left' | 'right' }) {
+    const active = sortCol === col
+    return (
+      <th className={`px-4 py-3 text-${align}`}>
+        <button
+          onClick={() => toggleSort(col)}
+          className={`inline-flex items-center gap-1 text-[10px] font-heading font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${active ? 'text-cyan' : 'text-teal hover:text-navy'}`}
+        >
+          {align === 'right' && active && <span className="text-[9px]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+          {label}
+          {align === 'left' && active && <span className="text-[9px]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+        </button>
+      </th>
+    )
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4">
+        <span className="text-sm flex-shrink-0">⚡</span>
+        <p className="text-[11px] text-amber-800">Performance Max campaigns use <strong>Asset Groups</strong> instead of traditional ad groups. Each asset group contains headlines, descriptions, images, and videos that Google assembles into ads automatically.</p>
+      </div>
+      <table className="w-full text-sm min-w-[760px]">
+        <thead>
+          <tr className="border-b border-cloud">
+            <SortTh col="name"            label="Asset Group"  align="left" />
+            <th className="px-4 py-3 text-left text-[10px] font-heading font-bold uppercase tracking-wider text-teal">Status</th>
+            <SortTh col="impressions"     label="Impressions" />
+            <SortTh col="clicks"          label="Clicks" />
+            <SortTh col="ctr"             label="CTR" />
+            <SortTh col="cost"            label="Cost" />
+            <SortTh col="conversions"     label="Conversions" />
+            <SortTh col="conversion_rate" label="Conv. Rate" />
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-cloud">
+          {sorted.map(g => (
+            <tr key={g.id} className="hover:bg-mist/50 transition-colors">
+              <td className="px-4 py-3 max-w-[240px]">
+                <p className="font-medium text-navy text-sm truncate" title={g.name}>{g.name}</p>
+                {g.final_urls[0] && (
+                  <p className="text-[10px] text-teal truncate mt-0.5" title={g.final_urls[0]}>🌐 {g.final_urls[0]}</p>
+                )}
+              </td>
+              <td className="px-4 py-3"><StatusBadge status={g.status} /></td>
+              <td className="px-4 py-3 text-right tabular-nums text-sm text-navy/80">{g.impressions.toLocaleString()}</td>
+              <td className="px-4 py-3 text-right tabular-nums text-sm text-navy/80">{g.clicks.toLocaleString()}</td>
+              <td className="px-4 py-3 text-right tabular-nums text-sm text-navy/80">{g.ctr.toFixed(2)}%</td>
+              <td className="px-4 py-3 text-right tabular-nums text-sm text-navy/80">
+                {currency} {g.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </td>
+              <td className="px-4 py-3 text-right tabular-nums text-sm text-navy/80">{g.conversions.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
+              <td className="px-4 py-3 text-right tabular-nums text-sm text-navy/80">{g.conversion_rate.toFixed(2)}%</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-cloud/70 bg-mist">
+            <td className="px-4 py-3 text-[11px] font-heading font-bold text-navy">Total · {assetGroups.length} asset group{assetGroups.length !== 1 ? 's' : ''}</td>
+            <td />
+            <td className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums">{totals.impressions.toLocaleString()}</td>
+            <td className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums">{totals.clicks.toLocaleString()}</td>
+            <td className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums">{totals.impressions > 0 ? ((totals.clicks / totals.impressions) * 100).toFixed(2) : '0.00'}%</td>
+            <td className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums">{currency} {totals.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+            <td className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums">{totals.conversions.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
+            <td className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums">{totals.clicks > 0 ? ((totals.conversions / totals.clicks) * 100).toFixed(2) : '0.00'}%</td>
           </tr>
         </tfoot>
       </table>
@@ -622,44 +724,70 @@ interface Props {
   startDate:    string
   endDate:      string
   initialView:  DrillView
+  channelType:  string
   onClose:      () => void
 }
 
-export function CampaignDrillDown({ campaignId, campaignName, clientId, currency, startDate, endDate, initialView, onClose }: Props) {
+export function CampaignDrillDown({ campaignId, campaignName, clientId, currency, startDate, endDate, initialView, channelType, onClose }: Props) {
+  const isPMax = channelType === 'PERFORMANCE_MAX' || channelType === '9'
+
   const [view, setView] = useState<DrillView>(initialView)
 
+  // Ad groups (Search / Display / Shopping / etc.)
   const [adGroups,  setAdGroups]  = useState<AdGroupMetrics[]>([])
   const [agLoading, setAgLoading] = useState(false)
   const [agError,   setAgError]   = useState('')
   const [agFetched, setAgFetched] = useState(false)
 
+  // Asset groups (Performance Max)
+  const [assetGroups,  setAssetGroups]  = useState<AssetGroupMetrics[]>([])
+  const [axLoading,    setAxLoading]    = useState(false)
+  const [axError,      setAxError]      = useState('')
+  const [axFetched,    setAxFetched]    = useState(false)
+
+  // Ads
   const [ads,        setAds]        = useState<AdData[]>([])
   const [adsLoading, setAdsLoading] = useState(false)
   const [adsError,   setAdsError]   = useState('')
   const [adsFetched, setAdsFetched] = useState(false)
 
+  // Fetch ad groups (non-PMax)
   useEffect(() => {
-    if (view !== 'ad_groups' || agFetched) return
+    if (isPMax || view !== 'ad_groups' || agFetched) return
     setAgLoading(true); setAgError('')
     fetch(`/api/ad-groups?client_account_id=${clientId}&campaign_id=${campaignId}&start_date=${startDate}&end_date=${endDate}`)
       .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error); setAdGroups(d.adGroups ?? []); setAgFetched(true) })
       .catch(e => setAgError(String(e)))
       .finally(() => setAgLoading(false))
-  }, [view, agFetched, clientId, campaignId, startDate, endDate])
+  }, [view, agFetched, isPMax, clientId, campaignId, startDate, endDate])
 
+  // Fetch asset groups (PMax only)
   useEffect(() => {
-    if (view !== 'ads' || adsFetched) return
+    if (!isPMax || view !== 'ad_groups' || axFetched) return
+    setAxLoading(true); setAxError('')
+    fetch(`/api/asset-groups?client_account_id=${clientId}&campaign_id=${campaignId}&start_date=${startDate}&end_date=${endDate}`)
+      .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error); setAssetGroups(d.assetGroups ?? []); setAxFetched(true) })
+      .catch(e => setAxError(String(e)))
+      .finally(() => setAxLoading(false))
+  }, [view, axFetched, isPMax, clientId, campaignId, startDate, endDate])
+
+  // Fetch ads (non-PMax only)
+  useEffect(() => {
+    if (isPMax || view !== 'ads' || adsFetched) return
     setAdsLoading(true); setAdsError('')
     fetch(`/api/ads?client_account_id=${clientId}&campaign_id=${campaignId}&start_date=${startDate}&end_date=${endDate}`)
       .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error); setAds(d.ads ?? []); setAdsFetched(true) })
       .catch(e => setAdsError(String(e)))
       .finally(() => setAdsLoading(false))
-  }, [view, adsFetched, clientId, campaignId, startDate, endDate])
+  }, [view, adsFetched, isPMax, clientId, campaignId, startDate, endDate])
 
-  const TABS: { key: DrillView; label: string; icon: string }[] = [
-    { key: 'ad_groups', label: 'Ad Groups', icon: '👥' },
-    { key: 'ads',       label: 'Ads',        icon: '📄' },
-  ]
+  // Build tab list based on campaign type
+  const TABS: { key: DrillView; label: string; icon: string }[] = isPMax
+    ? [{ key: 'ad_groups', label: 'Asset Groups', icon: '🎯' }]
+    : [
+        { key: 'ad_groups', label: 'Ad Groups', icon: '👥' },
+        { key: 'ads',       label: 'Ads',        icon: '📄' },
+      ]
 
   return (
     <div className="bg-white border-2 border-cyan/30 rounded-2xl overflow-hidden mt-4 animate-in fade-in duration-200">
@@ -670,6 +798,9 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
           </button>
           <span className="text-navy/20 select-none">|</span>
           <p className="font-heading font-bold text-navy text-sm truncate" title={campaignName}>{campaignName}</p>
+          {isPMax && (
+            <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full flex-shrink-0">⚡ PMax</span>
+          )}
         </div>
         <div className="flex gap-1 bg-white border border-cloud rounded-xl p-1">
           {TABS.map(t => (
@@ -682,8 +813,9 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
       </div>
 
       <div className="p-5">
-        {view === 'ad_groups' && <AdGroupsTab adGroups={adGroups} currency={currency} clientId={clientId} loading={agLoading} error={agError} />}
-        {view === 'ads'       && <AdsTab ads={ads} currency={currency} clientId={clientId} loading={adsLoading} error={adsError} />}
+        {view === 'ad_groups' && isPMax  && <AssetGroupsTab assetGroups={assetGroups} currency={currency} loading={axLoading} error={axError} />}
+        {view === 'ad_groups' && !isPMax && <AdGroupsTab adGroups={adGroups} currency={currency} clientId={clientId} loading={agLoading} error={agError} />}
+        {view === 'ads'       && !isPMax && <AdsTab ads={ads} currency={currency} clientId={clientId} loading={adsLoading} error={adsError} />}
       </div>
     </div>
   )

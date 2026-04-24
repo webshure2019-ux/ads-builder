@@ -421,7 +421,7 @@ export function ClientDashboard() {
   const [convActions,      setConvActions]      = useState<ConversionAction[]>([])
   const [convLoading,      setConvLoading]      = useState(false)
   const [convError,        setConvError]        = useState('')
-  const [drill,            setDrill]            = useState<{ id: string; name: string; view: DrillView } | null>(null)
+  const [drill,            setDrill]            = useState<{ id: string; name: string; view: DrillView; channelType: string } | null>(null)
 
   useEffect(() => {
     fetch('/api/clients').then(r => r.json()).then(d => setClients(d.clients || [])).catch(() => {})
@@ -690,9 +690,9 @@ export function ClientDashboard() {
                 currency={stats.currency}
                 clientId={clientId}
                 activeDrillId={drill?.id}
-                onDrill={(id, name, view) =>
+                onDrill={(id, name, view, channelType) =>
                   setDrill(prev =>
-                    prev?.id === id && prev.view === view ? null : { id, name, view }
+                    prev?.id === id && prev.view === view ? null : { id, name, view, channelType }
                   )
                 }
               />
@@ -709,6 +709,7 @@ export function ClientDashboard() {
                 startDate={rs}
                 endDate={re}
                 initialView={drill.view}
+                channelType={drill.channelType}
                 onClose={() => setDrill(null)}
               />
             )}
