@@ -18,6 +18,9 @@ export function AdGroupDetails({ adGroups, onChange }: Props) {
   const [kwError, setKwError] = useState<Record<string, string>>({})
   const [scraping, setScraping] = useState<Record<string, boolean>>({})
   const [scrapeError, setScrapeError] = useState<Record<string, string>>({})
+  const [scrapeSuccess, setScrapeSuccess] = useState<Record<string, string>>({})
+  const [showPaste, setShowPaste] = useState<Record<string, boolean>>({})
+  const [pasteContent, setPasteContent] = useState<Record<string, string>>({})
   const [negInput, setNegInput] = useState<Record<string, string>>({})
   const [negMatchType, setNegMatchType] = useState<Record<string, MatchType>>({})
 
@@ -31,6 +34,7 @@ export function AdGroupDetails({ adGroups, onChange }: Props) {
     if (!ag.url) return
     setScraping(prev => ({ ...prev, [ag.id]: true }))
     setScrapeError(prev => ({ ...prev, [ag.id]: '' }))
+    setScrapeSuccess(prev => ({ ...prev, [ag.id]: '' }))
     try {
       const res = await fetch('/api/scrape', {
         method: 'POST',
@@ -39,12 +43,42 @@ export function AdGroupDetails({ adGroups, onChange }: Props) {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      updateGroup(ag.id, { usps: data.content.usps })
+
+      const usps: string[] = data.content.usps ?? []
+      if (usps.length > 0) {
+        updateGroup(ag.id, { usps })
+        setScrapeSuccess(prev => ({ ...prev, [ag.id]: `Found ${usps.length} USPs from the page` }))
+      } else {
+        // Nothing found — leave existing USPs intact and let the user know
+        setScrapeSuccess(prev => ({
+          ...prev,
+          [ag.id]: 'Page scraped but no USPs detected — please enter them manually below',
+        }))
+      }
     } catch (err) {
-      setScrapeError(prev => ({ ...prev, [ag.id]: String(err) }))
+      setScrapeError(prev => ({ ...prev, [ag.id]: `Scrape failed: ${String(err)}` }))
     } finally {
       setScraping(prev => ({ ...prev, [ag.id]: false }))
     }
+  }
+
+  function handleExtractFromPaste(ag: AdGroup) {
+    const text = pasteContent[ag.id] || ''
+    if (!text.trim()) return
+    // Extract lines that look like USPs: short sentences, bullet points, list markers
+    const lines = text
+      .split(/\n|•|–|—|\*/)
+      .map(l => l.replace(/^[-–—•*\d.)\s]+/, '').trim())
+      .filter(l => l.length > 8 && l.length < 120)
+    const usps = Array.from(new Set(lines)).slice(0, 6)
+    if (usps.length > 0) {
+      updateGroup(ag.id, { usps })
+      setScrapeSuccess(prev => ({ ...prev, [ag.id]: `Extracted ${usps.length} USPs from pasted content` }))
+    } else {
+      setScrapeError(prev => ({ ...prev, [ag.id]: 'Could not extract USPs — try shorter bullet-point sentences' }))
+    }
+    setShowPaste(prev => ({ ...prev, [ag.id]: false }))
+    setPasteContent(prev => ({ ...prev, [ag.id]: '' }))
   }
 
   async function handleResearchKeywords(ag: AdGroup) {
@@ -180,7 +214,60 @@ export function AdGroupDetails({ adGroups, onChange }: Props) {
               </button>
             </div>
             {scrapeError[activeGroup.id] && (
-              <p className="text-red-500 text-xs mt-1">{scrapeError[activeGroup.id]}</p>
+              <div className="mt-1">
+                <p className="text-red-500 text-xs">{scrapeError[activeGroup.id]}</p>
+                {!showPaste[activeGroup.id] && (
+                  <button
+                    onClick={() => setShowPaste(prev => ({ ...prev, [activeGroup.id]: true }))}
+                    className="text-xs text-teal underline mt-1"
+                  >
+                    Paste page content instead →
+                  </button>
+                )}
+              </div>
+            )}
+            {scrapeSuccess[activeGroup.id] && !scrapeSuccess[activeGroup.id].startsWith('Found') && (
+              <div className="mt-1">
+                <p className="text-amber-600 text-xs">⚠ {scrapeSuccess[activeGroup.id]}</p>
+                {!showPaste[activeGroup.id] && (
+                  <button
+                    onClick={() => setShowPaste(prev => ({ ...prev, [activeGroup.id]: true }))}
+                    className="text-xs text-teal underline mt-1"
+                  >
+                    Paste page content instead →
+                  </button>
+                )}
+              </div>
+            )}
+            {scrapeSuccess[activeGroup.id]?.startsWith('Found') && (
+              <p className="text-emerald-600 text-xs mt-1">✓ {scrapeSuccess[activeGroup.id]}</p>
+            )}
+            {showPaste[activeGroup.id] && (
+              <div className="mt-2 space-y-2">
+                <p className="text-xs text-navy/60">Copy and paste the page text below — we'll extract the USPs automatically:</p>
+                <textarea
+                  rows={5}
+                  className={`${input} font-mono text-xs`}
+                  placeholder="Paste the page content here..."
+                  value={pasteContent[activeGroup.id] || ''}
+                  onChange={e => setPasteContent(prev => ({ ...prev, [activeGroup.id]: e.target.value }))}
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleExtractFromPaste(activeGroup)}
+                    disabled={!pasteContent[activeGroup.id]?.trim()}
+                    className="bg-teal text-white font-heading font-bold text-xs px-4 py-2 rounded-full hover:bg-teal/80 disabled:opacity-40 transition-colors"
+                  >
+                    Extract USPs
+                  </button>
+                  <button
+                    onClick={() => setShowPaste(prev => ({ ...prev, [activeGroup.id]: false }))}
+                    className="text-xs text-navy/40 hover:text-navy transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             )}
           </div>
 

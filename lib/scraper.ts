@@ -14,7 +14,7 @@ export function inferTone(text: string): ToneType {
 export function extractContent(html: string, _url: string): ScrapedContent {
   const $ = cheerio.load(html)
 
-  $('script, style, nav, footer, noscript, iframe').remove()
+  $('script, style, nav, footer, noscript, iframe, header').remove()
 
   const title = $('title').text().split(/[|\-–]/)[0].trim()
   const metaDescription = $('meta[name="description"]').attr('content') || ''
@@ -22,21 +22,46 @@ export function extractContent(html: string, _url: string): ScrapedContent {
   const paragraphs = $('p').map((_, el) => $(el).text().trim()).get()
     .filter(t => t.length > 10)
     .slice(0, 8)
+
+  // USP extraction: try <li> first, then fall back to subheadings and short paragraphs
   const listItems = $('li').map((_, el) => $(el).text().trim()).get()
     .filter(t => t.length > 5 && t.length < 120)
-    .slice(0, 8)
+
+  const subheadings = $('h2, h3').map((_, el) => $(el).text().trim()).get()
+    .filter(t => t.length > 5 && t.length < 80)
+
+  const shortParagraphs = $('p, span').map((_, el) => $(el).text().trim()).get()
+    .filter(t => t.length > 10 && t.length < 100)
+
+  // Build USP candidates: prefer li items, then headings, then short paragraphs
+  const uspCandidates = listItems.length >= 3
+    ? listItems
+    : [...listItems, ...subheadings, ...shortParagraphs]
+
+  const usps = dedupe(uspCandidates)
+    .filter(t => !t.toLowerCase().includes('cookie') && !t.toLowerCase().includes('privacy'))
+    .slice(0, 6)
 
   const raw_text = [...headings, ...paragraphs].join('\n').slice(0, 3000)
-
   const audience = inferAudience(raw_text + ' ' + metaDescription)
 
   return {
     product: title || headings[0] || 'Product/Service',
     audience,
-    usps: listItems.slice(0, 6),
+    usps,
     tone: inferTone(raw_text),
     raw_text,
   }
+}
+
+function dedupe(items: string[]): string[] {
+  const seen = new Set<string>()
+  return items.filter(item => {
+    const key = item.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function inferAudience(text: string): string {
