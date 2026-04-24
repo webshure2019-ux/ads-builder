@@ -1,11 +1,150 @@
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=Roboto:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=Inter:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── Design tokens ─────────────────────────────────────────── */
+:root {
+  --surface:      rgba(255, 255, 255, 0.70);
+  --surface-hi:   rgba(255, 255, 255, 0.88);
+  --surface-lo:   rgba(255, 255, 255, 0.40);
+  --border:       rgba(255, 255, 255, 0.68);
+  --border-lo:    rgba(0,   0,   0,   0.07);
+  --shadow:       0 8px 32px rgba(10, 60, 120, 0.10), 0 1px 4px rgba(10, 60, 120, 0.05);
+  --shadow-sm:    0 2px 12px rgba(10, 60, 120, 0.08);
+  --text-1:       #0a1628;
+  --text-2:       #4d6878;
+  --text-3:       #8fa5b5;
+  --input-bg:     rgba(255, 255, 255, 0.55);
+}
+
+.dark {
+  --surface:      rgba(255, 255, 255, 0.058);
+  --surface-hi:   rgba(255, 255, 255, 0.095);
+  --surface-lo:   rgba(255, 255, 255, 0.028);
+  --border:       rgba(255, 255, 255, 0.105);
+  --border-lo:    rgba(255, 255, 255, 0.065);
+  --shadow:       0 8px 40px rgba(0, 0, 0, 0.45), 0 1px 6px rgba(0, 0, 0, 0.28);
+  --shadow-sm:    0 2px 16px rgba(0, 0, 0, 0.32);
+  --text-1:       #e2edf8;
+  --text-2:       rgba(226, 237, 248, 0.55);
+  --text-3:       rgba(226, 237, 248, 0.30);
+  --input-bg:     rgba(255, 255, 255, 0.04);
+}
+
+/* ── Base ──────────────────────────────────────────────────── */
 @layer base {
+  html { scroll-behavior: smooth; }
+
   body {
-    @apply bg-mist text-navy font-body;
+    font-family: 'Inter', 'Roboto', Arial, sans-serif;
+    color: var(--text-1);
+    min-height: 100vh;
+    /* Light: soft blue-lavender mesh */
+    background-color: #eaf3fb;
+    background-image:
+      radial-gradient(ellipse 80% 55% at 15%  5%, #d6eaf9 0%, transparent 55%),
+      radial-gradient(ellipse 65% 50% at 85% 95%, #e4d9f8 0%, transparent 55%),
+      radial-gradient(ellipse 50% 40% at 50% 50%, #f0f8ff 0%, transparent 60%);
+    background-attachment: fixed;
+  }
+
+  .dark body {
+    background-color: #060c18;
+    background-image:
+      radial-gradient(ellipse 70% 50% at 15%  5%, rgba(5, 46, 75, 0.55)  0%, transparent 55%),
+      radial-gradient(ellipse 60% 45% at 85% 95%, rgba(49,192,255, 0.05) 0%, transparent 55%),
+      radial-gradient(ellipse 50% 40% at 50% 50%, rgba(8, 16, 35, 0.8)   0%, transparent 60%);
+  }
+
+  /* Smooth theme transitions */
+  *, *::before, *::after {
+    transition-property: background-color, border-color, color, box-shadow, opacity;
+    transition-duration: 180ms;
+    transition-timing-function: ease;
+  }
+
+  /* Disable transition on page load to prevent flicker */
+  .no-transition, .no-transition * {
+    transition: none !important;
   }
 }
+
+/* ── Glass components ──────────────────────────────────────── */
+@layer components {
+
+  /* Core glass surface */
+  .glass {
+    background:              var(--surface);
+    backdrop-filter:         blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border:                  1px solid var(--border);
+    box-shadow:              var(--shadow);
+  }
+
+  /* Stronger glass — navs, modals */
+  .glass-hi {
+    background:              var(--surface-hi);
+    backdrop-filter:         blur(32px) saturate(180%);
+    -webkit-backdrop-filter: blur(32px) saturate(180%);
+    border:                  1px solid var(--border);
+    box-shadow:              var(--shadow);
+  }
+
+  /* Subtle glass — nested panels */
+  .glass-lo {
+    background:              var(--surface-lo);
+    backdrop-filter:         blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border:                  1px solid var(--border-lo);
+    box-shadow:              var(--shadow-sm);
+  }
+
+  /* Glass card shorthand */
+  .card { @apply glass rounded-2xl; }
+
+  /* Inputs */
+  .field {
+    background:              var(--input-bg);
+    backdrop-filter:         blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border:                  1px solid var(--border);
+    color:                   var(--text-1);
+    @apply w-full rounded-xl px-3 py-2.5 text-sm outline-none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .field::placeholder { color: var(--text-3); }
+  .field:focus {
+    border-color: #31C0FF;
+    box-shadow:   0 0 0 3px rgba(49, 192, 255, 0.18);
+  }
+
+  /* select inherits .field */
+  select.field { appearance: none; cursor: pointer; }
+
+  /* Text tokens */
+  .t1 { color: var(--text-1); }
+  .t2 { color: var(--text-2); }
+  .t3 { color: var(--text-3); }
+
+  /* Divider */
+  .divider {
+    border-color: var(--border-lo);
+    @apply border-t w-full;
+  }
+
+  /* Pill badge */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-heading font-bold uppercase tracking-wider;
+    background: var(--surface-lo);
+    border:     1px solid var(--border);
+    color:      var(--text-2);
+  }
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: rgba(49,192,255,0.35); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(49,192,255,0.6); }

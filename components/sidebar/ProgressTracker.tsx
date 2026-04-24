@@ -12,15 +12,23 @@ interface Props { currentStep: number }
 
 export function ProgressTracker({ currentStep }: Props) {
   return (
-    <div className="bg-white border border-cloud rounded-2xl p-4">
-      <h3 className="font-heading font-bold text-sm text-navy mb-3">Campaign Progress</h3>
+    <div className="card p-4">
+      <h3 className="font-heading font-bold text-sm mb-3" style={{ color: 'var(--text-1)' }}>Campaign Progress</h3>
       <div className="space-y-0.5">
         {STEPS.map((step, i) => {
-          const done = i < currentStep
+          const done   = i < currentStep
           const active = i === currentStep
           return (
-            <div key={step} className={`flex items-center gap-2 py-1.5 text-sm border-b border-mist last:border-0 ${done ? 'text-emerald-600' : active ? 'text-orange font-semibold' : 'text-teal'}`}>
-              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${done ? 'bg-emerald-500' : active ? 'bg-orange' : 'bg-cloud'}`} />
+            <div
+              key={step}
+              className={`flex items-center gap-2 py-1.5 text-xs border-b last:border-0 ${done ? 'font-medium' : active ? 'font-semibold' : ''}`}
+              style={{
+                color:       done ? '#10b981' : active ? '#FF8A30' : 'var(--text-3)',
+                borderColor: 'var(--border-lo)',
+              }}
+            >
+              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${done ? 'bg-emerald-500' : active ? 'bg-orange' : ''}`}
+                   style={!done && !active ? { background: 'var(--border)' } : {}} />
               {step}
             </div>
           )

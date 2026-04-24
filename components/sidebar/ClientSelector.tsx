@@ -16,17 +16,17 @@ export function ClientSelector({ selectedId, onSelect }: Props) {
   }, [])
 
   return (
-    <div className="bg-white border border-cloud rounded-2xl p-4">
-      <h3 className="font-heading font-bold text-sm text-navy mb-3">Client Account</h3>
+    <div className="card p-4">
+      <h3 className="font-heading font-bold text-sm mb-3" style={{ color: 'var(--text-1)' }}>Client Account</h3>
       {loading ? (
-        <p className="text-xs text-teal">Loading accounts...</p>
+        <p className="text-xs" style={{ color: 'var(--text-2)' }}>Loading accounts...</p>
       ) : clients.length === 0 ? (
-        <p className="text-xs text-teal">No client accounts found under this MCC.</p>
+        <p className="text-xs" style={{ color: 'var(--text-2)' }}>No client accounts found under this MCC.</p>
       ) : (
         <select
           value={selectedId || ''}
           onChange={e => e.target.value && onSelect(e.target.value)}
-          className="w-full bg-mist border border-cloud rounded-lg px-3 py-2.5 text-sm text-navy focus:outline-none focus:border-cyan appearance-none cursor-pointer"
+          className="field"
         >
           <option value="">Select a client...</option>
           {clients.map(c => (

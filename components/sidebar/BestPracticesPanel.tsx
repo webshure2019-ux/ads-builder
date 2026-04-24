@@ -42,17 +42,18 @@ export function BestPracticesPanel({ campaignType }: Props) {
   const tips = campaignType ? TIPS[campaignType] : []
 
   return (
-    <div className="bg-white border border-cloud rounded-2xl p-4">
-      <h3 className="font-heading font-bold text-sm text-navy mb-3">
-        Best Practices{campaignType ? ` · ${campaignType === 'pmax' ? 'Performance Max' : campaignType.replace('_', ' ')}` : ''}
+    <div className="card p-4">
+      <h3 className="font-heading font-bold text-sm mb-3" style={{ color: 'var(--text-1)' }}>
+        Best Practices{campaignType ? ` · ${campaignType === 'pmax' ? 'PMax' : campaignType.replace('_', ' ')}` : ''}
       </h3>
       {tips.length === 0 ? (
-        <p className="text-xs text-teal">Select a campaign type to see best practices.</p>
+        <p className="text-xs" style={{ color: 'var(--text-3)' }}>Select a campaign type to see best practices.</p>
       ) : (
         <div className="space-y-2">
           {tips.map(({ title, tip }) => (
-            <div key={title} className="bg-mist border-l-2 border-cyan rounded-r-lg px-3 py-2 text-xs text-navy leading-snug">
-              <span className="font-semibold text-teal">{title}: </span>{tip}
+            <div key={title} className="glass-lo border-l-2 border-cyan rounded-r-xl px-3 py-2.5 text-xs leading-snug"
+                 style={{ color: 'var(--text-2)' }}>
+              <span className="font-semibold text-cyan">{title}: </span>{tip}
             </div>
           ))}
         </div>

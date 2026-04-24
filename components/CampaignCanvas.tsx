@@ -41,15 +41,18 @@ function SectionCard({ num, title, status, children, defaultOpen = false }: {
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className="bg-white border border-cloud rounded-2xl overflow-hidden mb-4">
+    <div className="glass rounded-2xl overflow-hidden mb-4 transition-all">
       <button
-        className="w-full flex items-center gap-3 px-5 py-4 bg-mist border-b border-cloud text-left"
+        className="w-full flex items-center gap-3 px-5 py-4 text-left hover:opacity-90 transition-opacity"
+        style={{ background: 'var(--surface-lo)', borderBottom: open ? '1px solid var(--border-lo)' : 'none' }}
         onClick={() => setOpen(!open)}
       >
-        <div className="w-7 h-7 rounded-full bg-navy text-white flex items-center justify-center text-xs font-heading font-bold flex-shrink-0">{num}</div>
-        <span className="font-heading font-bold text-navy flex-1">{title}</span>
-        <span className="text-xs text-teal">{status}</span>
-        <span className="text-teal text-xs">{open ? '▲' : '▼'}</span>
+        <div className="w-7 h-7 rounded-full bg-cyan text-navy flex items-center justify-center text-xs font-heading font-bold flex-shrink-0">
+          {num}
+        </div>
+        <span className="font-heading font-bold flex-1" style={{ color: 'var(--text-1)' }}>{title}</span>
+        <span className="text-xs font-medium" style={{ color: 'var(--text-2)' }}>{status}</span>
+        <span className="text-xs ml-1" style={{ color: 'var(--text-3)' }}>{open ? '▲' : '▼'}</span>
       </button>
       {open && <div className="px-5 py-5">{children}</div>}
     </div>
@@ -227,7 +230,7 @@ export function CampaignCanvas() {
     : { pkg: 0, groups: 0, details: 0, brief: 2, settings: 3, gen: 4, review: 5 }
 
   return (
-    <div className="grid grid-cols-[1fr_300px] gap-5 max-w-7xl mx-auto px-5 py-5">
+    <div className="grid grid-cols-[1fr_300px] gap-5 max-w-7xl mx-auto px-5 py-6 animate-fade-in">
       <div>
 
         {/* 1. Campaign Type */}
@@ -415,7 +418,7 @@ export function CampaignCanvas() {
       </div>
 
       {/* Sidebar */}
-      <div className="space-y-4">
+      <div className="space-y-3 sticky top-16 self-start">
         <ClientSelector selectedId={state.client_id} onSelect={id => update({ client_id: id })} />
         <ProgressTracker currentStep={
           !state.campaign_type ? 0
