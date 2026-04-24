@@ -434,6 +434,200 @@ export async function getConversionBreakdown(
     .sort((a, b) => b.count - a.count)
 }
 
+// ─── Campaign ID validator (numeric-only, used in GAQL WHERE without quotes) ──
+const CAMPAIGN_ID_RE = /^\d+$/
+function validateCampaignId(id: string): void {
+  if (!CAMPAIGN_ID_RE.test(id)) throw new Error(`Invalid campaign ID: ${id}`)
+}
+
+// ─── Ad Groups ────────────────────────────────────────────────────────────────
+export interface AdGroupMetrics {
+  id:              string
+  name:            string
+  status:          string
+  impressions:     number
+  clicks:          number
+  cost:            number
+  conversions:     number
+  ctr:             number
+  conversion_rate: number
+}
+
+export async function getAdGroups(
+  clientAccountId: string,
+  campaignId: string,
+  startDate: string,
+  endDate: string
+): Promise<AdGroupMetrics[]> {
+  validateDate(startDate, 'start_date')
+  validateDate(endDate, 'end_date')
+  validateCampaignId(campaignId)
+  if (startDate > endDate) throw new Error('start_date must be before end_date')
+
+  const customer = getClientCustomer(clientAccountId)
+
+  const results = await customer.query(`
+    SELECT
+      ad_group.id,
+      ad_group.name,
+      ad_group.status,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.cost_micros,
+      metrics.conversions
+    FROM ad_group
+    WHERE campaign.id = ${campaignId}
+      AND segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND ad_group.status != 'REMOVED'
+    ORDER BY metrics.cost_micros DESC
+  `) as any[]
+
+  const byGroup = new Map<string, {
+    name: string; status: string
+    impressions: number; clicks: number; costMicros: number; conversions: number
+  }>()
+
+  for (const r of results) {
+    const id = String(r.ad_group?.id ?? '')
+    if (!id) continue
+    const prev = byGroup.get(id)
+    if (prev) {
+      prev.impressions += r.metrics?.impressions ?? 0
+      prev.clicks      += r.metrics?.clicks      ?? 0
+      prev.costMicros  += r.metrics?.cost_micros ?? 0
+      prev.conversions += r.metrics?.conversions ?? 0
+    } else {
+      byGroup.set(id, {
+        name:        r.ad_group?.name   ?? 'Unknown',
+        status:      String(r.ad_group?.status ?? 'UNKNOWN'),
+        impressions: r.metrics?.impressions ?? 0,
+        clicks:      r.metrics?.clicks      ?? 0,
+        costMicros:  r.metrics?.cost_micros ?? 0,
+        conversions: r.metrics?.conversions ?? 0,
+      })
+    }
+  }
+
+  return Array.from(byGroup.entries())
+    .map(([id, g]) => {
+      const cost = Math.round(g.costMicros / 1_000_000 * 100) / 100
+      return {
+        id,
+        name:            g.name,
+        status:          g.status,
+        impressions:     g.impressions,
+        clicks:          g.clicks,
+        cost,
+        conversions:     Math.round(g.conversions * 100) / 100,
+        ctr:             g.impressions > 0 ? Math.round((g.clicks / g.impressions) * 10000) / 100 : 0,
+        conversion_rate: g.clicks > 0 ? Math.round((g.conversions / g.clicks) * 10000) / 100 : 0,
+      }
+    })
+    .sort((a, b) => b.cost - a.cost)
+}
+
+// ─── Ads ──────────────────────────────────────────────────────────────────────
+export interface AdData {
+  id:            string
+  ad_group_id:   string
+  ad_group_name: string
+  type:          string
+  status:        string
+  headlines:     string[]
+  descriptions:  string[]
+  final_url:     string
+  impressions:   number
+  clicks:        number
+  cost:          number
+  ctr:           number
+}
+
+export async function getAds(
+  clientAccountId: string,
+  campaignId: string,
+  startDate: string,
+  endDate: string
+): Promise<AdData[]> {
+  validateDate(startDate, 'start_date')
+  validateDate(endDate, 'end_date')
+  validateCampaignId(campaignId)
+  if (startDate > endDate) throw new Error('start_date must be before end_date')
+
+  const customer = getClientCustomer(clientAccountId)
+
+  const results = await customer.query(`
+    SELECT
+      ad_group_ad.ad.id,
+      ad_group_ad.ad.type,
+      ad_group_ad.ad.final_urls,
+      ad_group_ad.ad.responsive_search_ad.headlines,
+      ad_group_ad.ad.responsive_search_ad.descriptions,
+      ad_group_ad.status,
+      ad_group.id,
+      ad_group.name,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.cost_micros
+    FROM ad_group_ad
+    WHERE campaign.id = ${campaignId}
+      AND segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND ad_group_ad.status != 'REMOVED'
+    ORDER BY metrics.cost_micros DESC
+  `) as any[]
+
+  const byAd = new Map<string, {
+    ad_group_id: string; ad_group_name: string; type: string; status: string
+    headlines: string[]; descriptions: string[]; final_url: string
+    impressions: number; clicks: number; costMicros: number
+  }>()
+
+  for (const r of results) {
+    const id = String(r.ad_group_ad?.ad?.id ?? '')
+    if (!id) continue
+    const prev = byAd.get(id)
+    if (prev) {
+      prev.impressions += r.metrics?.impressions ?? 0
+      prev.clicks      += r.metrics?.clicks      ?? 0
+      prev.costMicros  += r.metrics?.cost_micros ?? 0
+    } else {
+      const rsaHeadlines    = (r.ad_group_ad?.ad?.responsive_search_ad?.headlines    ?? [])
+        .map((h: any) => h.text ?? '').filter(Boolean)
+      const rsaDescriptions = (r.ad_group_ad?.ad?.responsive_search_ad?.descriptions ?? [])
+        .map((d: any) => d.text ?? '').filter(Boolean)
+
+      byAd.set(id, {
+        ad_group_id:   String(r.ad_group?.id   ?? ''),
+        ad_group_name: r.ad_group?.name         ?? 'Unknown',
+        type:          String(r.ad_group_ad?.ad?.type ?? 'UNKNOWN'),
+        status:        String(r.ad_group_ad?.status    ?? 'UNKNOWN'),
+        headlines:     rsaHeadlines,
+        descriptions:  rsaDescriptions,
+        final_url:     (r.ad_group_ad?.ad?.final_urls ?? [])[0] ?? '',
+        impressions:   r.metrics?.impressions ?? 0,
+        clicks:        r.metrics?.clicks      ?? 0,
+        costMicros:    r.metrics?.cost_micros ?? 0,
+      })
+    }
+  }
+
+  return Array.from(byAd.entries())
+    .map(([id, a]) => ({
+      id,
+      ad_group_id:   a.ad_group_id,
+      ad_group_name: a.ad_group_name,
+      type:          a.type,
+      status:        a.status,
+      headlines:     a.headlines,
+      descriptions:  a.descriptions,
+      final_url:     a.final_url,
+      impressions:   a.impressions,
+      clicks:        a.clicks,
+      cost:          Math.round(a.costMicros / 1_000_000 * 100) / 100,
+      ctr:           a.impressions > 0 ? Math.round((a.clicks / a.impressions) * 10000) / 100 : 0,
+    }))
+    .sort((a, b) => b.cost - a.cost)
+}
+
 // Campaign status enum values used by the Google Ads API
 const CAMPAIGN_STATUS = { ENABLED: 2, PAUSED: 3 } as const
 type CampaignStatusAction = 'ENABLED' | 'PAUSED'

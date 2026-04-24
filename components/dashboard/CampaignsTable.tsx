@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import type { CampaignMetrics } from '@/lib/google-ads'
+import type { DrillView } from '@/components/dashboard/CampaignDrillDown'
 
 // ─── Channel type display map ──────────────────────────────────────────────────
 const CHANNEL_MAP: Record<string, { icon: string; label: string }> = {
@@ -122,10 +123,14 @@ export function CampaignsTable({
   campaigns: initialCampaigns,
   currency,
   clientId,
+  activeDrillId,
+  onDrill,
 }: {
-  campaigns: CampaignMetrics[]
-  currency:  string
-  clientId:  string
+  campaigns:     CampaignMetrics[]
+  currency:      string
+  clientId:      string
+  activeDrillId?: string
+  onDrill?:      (id: string, name: string, view: DrillView) => void
 }) {
   // Local copy so optimistic status updates don't require a full refetch
   const [campaigns, setCampaigns] = useState<CampaignMetrics[]>(initialCampaigns)
@@ -211,17 +216,21 @@ export function CampaignsTable({
               <th className="px-4 py-3.5 text-[10px] font-heading font-bold uppercase tracking-wider text-teal text-right whitespace-nowrap">
                 Actions
               </th>
+              <th className="px-4 py-3.5 text-[10px] font-heading font-bold uppercase tracking-wider text-teal text-right whitespace-nowrap">
+                View
+              </th>
             </tr>
           </thead>
 
           {/* ── Rows ── */}
           <tbody className="divide-y divide-cloud">
             {sorted.map(c => {
-              const ch     = CHANNEL_MAP[c.channel_type] ?? { icon: '📋', label: c.channel_type }
-              const active = isActive(c.status)
+              const ch          = CHANNEL_MAP[c.channel_type] ?? { icon: '📋', label: c.channel_type }
+              const active      = isActive(c.status)
+              const isDrillOpen = activeDrillId === c.id
 
               return (
-                <tr key={c.id} className="hover:bg-mist/50 transition-colors">
+                <tr key={c.id} className={`transition-colors ${isDrillOpen ? 'bg-cyan/5 border-l-2 border-l-cyan' : 'hover:bg-mist/50'}`}>
 
                   {/* Name + type */}
                   <td className="px-5 py-3.5">
@@ -266,6 +275,34 @@ export function CampaignsTable({
                       onStatusChange={handleStatusChange}
                     />
                   </td>
+
+                  {/* Drill-down buttons */}
+                  <td className="px-4 py-3.5">
+                    <div className="flex gap-1.5 justify-end">
+                      <button
+                        onClick={() => onDrill?.(c.id, c.name, 'ad_groups')}
+                        className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-all whitespace-nowrap ${
+                          isDrillOpen
+                            ? 'bg-cyan/10 border-cyan text-navy'
+                            : 'border-cloud text-navy/60 hover:border-cyan/50 hover:text-navy hover:bg-mist'
+                        }`}
+                        title="View ad groups"
+                      >
+                        👥 Ad Groups
+                      </button>
+                      <button
+                        onClick={() => onDrill?.(c.id, c.name, 'ads')}
+                        className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-all whitespace-nowrap ${
+                          isDrillOpen
+                            ? 'bg-cyan/10 border-cyan text-navy'
+                            : 'border-cloud text-navy/60 hover:border-cyan/50 hover:text-navy hover:bg-mist'
+                        }`}
+                        title="View ads"
+                      >
+                        📄 Ads
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               )
             })}
@@ -299,7 +336,8 @@ export function CampaignsTable({
               <td className="px-4 py-3.5 text-right tabular-nums font-bold text-navy text-xs whitespace-nowrap">
                 {totalConvRate.toFixed(2)}%
               </td>
-              {/* Empty actions column */}
+              {/* Empty actions + view columns */}
+              <td />
               <td />
             </tr>
           </tfoot>

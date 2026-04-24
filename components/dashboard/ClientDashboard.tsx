@@ -5,6 +5,7 @@ import {
 } from 'recharts'
 import type { DailyMetrics, AccountStats, CampaignMetrics, ConversionAction } from '@/lib/google-ads'
 import { CampaignsTable } from '@/components/dashboard/CampaignsTable'
+import { CampaignDrillDown, type DrillView } from '@/components/dashboard/CampaignDrillDown'
 
 interface GoogleClient { id: string; name: string }
 
@@ -420,6 +421,7 @@ export function ClientDashboard() {
   const [convActions,      setConvActions]      = useState<ConversionAction[]>([])
   const [convLoading,      setConvLoading]      = useState(false)
   const [convError,        setConvError]        = useState('')
+  const [drill,            setDrill]            = useState<{ id: string; name: string; view: DrillView } | null>(null)
 
   useEffect(() => {
     fetch('/api/clients').then(r => r.json()).then(d => setClients(d.clients || [])).catch(() => {})
@@ -445,10 +447,11 @@ export function ClientDashboard() {
       .finally(() => setConvLoading(false))
   }, [activeCard, clientId, preset, customStart, customEnd])
 
-  // Reset breakdown when client or date changes so stale data doesn't flash
+  // Reset breakdown + drill-down when client or date changes so stale data doesn't flash
   useEffect(() => {
     setConvActions([])
     setConvError('')
+    setDrill(null)
   }, [clientId, preset, customStart, customEnd])
 
   const fetchStats = useCallback(async (
@@ -686,6 +689,27 @@ export function ClientDashboard() {
                 campaigns={campaigns}
                 currency={stats.currency}
                 clientId={clientId}
+                activeDrillId={drill?.id}
+                onDrill={(id, name, view) =>
+                  setDrill(prev =>
+                    prev?.id === id && prev.view === view ? null : { id, name, view }
+                  )
+                }
+              />
+            )}
+
+            {/* Drill-down panel — shown below table when a campaign is selected */}
+            {drill && rs && re && (
+              <CampaignDrillDown
+                key={`${drill.id}-${drill.view}`}
+                campaignId={drill.id}
+                campaignName={drill.name}
+                clientId={clientId}
+                currency={stats.currency}
+                startDate={rs}
+                endDate={re}
+                initialView={drill.view}
+                onClose={() => setDrill(null)}
               />
             )}
           </div>
