@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'ad_groups required for Search campaigns' }, { status: 400 })
       }
       googleCampaignId = await publishSearchCampaign(
-        client_account_id, campaign_name, settings, ad_groups, keywords
+        client_account_id, campaign_name, settings, ad_groups
       )
     } else if (campaign_type === 'pmax') {
       if (!assets) return NextResponse.json({ error: 'assets required for PMax campaigns' }, { status: 400 })

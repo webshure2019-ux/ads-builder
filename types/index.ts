@@ -138,9 +138,19 @@ export interface AdStrengthResult {
   tips: string[]
 }
 
+export interface NegativeKeyword {
+  id: string
+  text: string
+  match_type: MatchType
+}
+
 export interface AdGroup {
   id: string
   name: string
+  url?: string
+  usps: string[]
+  keywords: Keyword[]
+  negative_keywords: NegativeKeyword[]
   assets?: GeneratedAssets
 }
 

@@ -96,8 +96,7 @@ export async function publishSearchCampaign(
   clientAccountId: string,
   name: string,
   settings: CampaignSettingsData,
-  adGroups: AdGroup[],
-  keywords: Keyword[]
+  adGroups: AdGroup[]
 ): Promise<string> {
   const customer = getClientCustomer(clientAccountId)
 
@@ -117,8 +116,6 @@ export async function publishSearchCampaign(
   }]) as any
   const campaign = campaignResp.results[0]
 
-  const selectedKws = keywords.filter(k => k.selected)
-
   // Create one ad group per product/service
   for (const ag of adGroups) {
     if (!ag.name.trim() || !ag.assets) continue
@@ -131,6 +128,7 @@ export async function publishSearchCampaign(
     }]) as any
     const createdAdGroup = adGroupResp.results[0]
 
+    // Responsive Search Ad
     await customer.adGroupAds.create([{
       ad_group: createdAdGroup.resource_name,
       status: 2,
@@ -142,10 +140,11 @@ export async function publishSearchCampaign(
       },
     }])
 
-    // Keywords shared across all ad groups
-    if (selectedKws.length > 0) {
+    // Per-ad-group positive keywords
+    const positiveKws = (ag.keywords ?? []).filter(k => k.selected)
+    if (positiveKws.length > 0) {
       await customer.adGroupCriteria.create(
-        selectedKws.map(kw => ({
+        positiveKws.map(kw => ({
           ad_group: createdAdGroup.resource_name,
           keyword: { text: kw.text, match_type: MATCH_TYPE[kw.match_type] },
           status: 2,
@@ -153,7 +152,20 @@ export async function publishSearchCampaign(
       )
     }
 
-    // Sitelinks (first ad group's sitelinks applied at campaign level)
+    // Per-ad-group negative keywords
+    const negativeKws = ag.negative_keywords ?? []
+    if (negativeKws.length > 0) {
+      await customer.adGroupCriteria.create(
+        negativeKws.map(nk => ({
+          ad_group: createdAdGroup.resource_name,
+          keyword: { text: nk.text, match_type: MATCH_TYPE[nk.match_type] },
+          negative: true,
+          status: 2,
+        }))
+      )
+    }
+
+    // Sitelinks at campaign level from first ad group
     if (ag === adGroups[0] && ag.assets.sitelinks?.length) {
       await customer.campaignAssets.create(
         ag.assets.sitelinks.map(sl => ({

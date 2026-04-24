@@ -7,6 +7,7 @@ import {
 import { CampaignTypeSelector } from './sections/CampaignTypeSelector'
 import { PackageSelector } from './sections/PackageSelector'
 import { AdGroupManager } from './sections/AdGroupManager'
+import { AdGroupDetails } from './sections/AdGroupDetails'
 import { BriefForm } from './sections/BriefForm'
 import { KeywordResearch } from './sections/KeywordResearch'
 import { CampaignSettings } from './sections/CampaignSettings'
@@ -15,12 +16,16 @@ import { ClientSelector } from './sidebar/ClientSelector'
 import { ProgressTracker } from './sidebar/ProgressTracker'
 import { BestPracticesPanel } from './sidebar/BestPracticesPanel'
 
+function freshAdGroup(): AdGroup {
+  return { id: crypto.randomUUID(), name: '', usps: [], keywords: [], negative_keywords: [] }
+}
+
 const INITIAL_STATE: CanvasState = {
   client_id: null,
   campaign_type: null,
   ppc_package: null,
-  ad_groups: [{ id: crypto.randomUUID(), name: '' }],
-  brief: { keywords: [] },
+  ad_groups: [freshAdGroup()],
+  brief: {},
   settings: { bidding_strategy: 'maximize_conversions', locations: ['South Africa'], language: 'English' },
   assets: null,
   campaign_id: null,
@@ -61,42 +66,55 @@ export function CampaignCanvas() {
     setState(prev => ({ ...prev, ...patch }))
   }
 
-  function handleSelectPackage(pkg: PpcPackage) {
-    const max = PPC_PACKAGE_CONFIG[pkg].maxAdGroups
-    // Reset ad groups but keep up to the new max
-    const kept = state.ad_groups.slice(0, max)
-    update({ ppc_package: pkg, ad_groups: kept.length ? kept : [{ id: crypto.randomUUID(), name: '' }], assets: null })
-  }
-
   function handleSelectType(type: CampaignType) {
     update({
       campaign_type: type,
       ppc_package: null,
-      ad_groups: [{ id: crypto.randomUUID(), name: '' }],
+      ad_groups: [freshAdGroup()],
+      assets: null,
+      brief: {},
+    })
+  }
+
+  function handleSelectPackage(pkg: PpcPackage) {
+    const max = PPC_PACKAGE_CONFIG[pkg].maxAdGroups
+    const kept = state.ad_groups.slice(0, max)
+    update({
+      ppc_package: pkg,
+      ad_groups: kept.length ? kept : [freshAdGroup()],
       assets: null,
     })
   }
 
-  // Generate for Search (loops through all ad groups)
+  // Generate for Search — uses per-ad-group brief, URL, USPs, keywords
   async function handleGenerateSearch() {
     const filledGroups = state.ad_groups.filter(ag => ag.name.trim())
-    if (!filledGroups.length) return
+    if (!filledGroups.length || !state.brief.brand_name) return
 
     update({ is_generating: true, error: null })
-
     const updatedGroups = state.ad_groups.map(ag => ({ ...ag, assets: undefined }))
 
     for (let i = 0; i < filledGroups.length; i++) {
       const ag = filledGroups[i]
       setState(prev => ({ ...prev, generating_index: i }))
+
+      // Build per-ad-group brief: shared campaign fields + per-group overrides
+      const adGroupBrief: Brief = {
+        brand_name: state.brief.brand_name!,
+        audience: state.brief.audience || '',
+        tone: state.brief.tone || 'professional',
+        goal: state.brief.goal || 'lead_gen',
+        product: ag.name,
+        url: ag.url || '',
+        usps: ag.usps.length > 0 ? ag.usps : (state.brief.usps || []),
+        keywords: ag.keywords,
+      }
+
       try {
         const res = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            campaign_type: 'search',
-            brief: { ...state.brief, product: ag.name },
-          }),
+          body: JSON.stringify({ campaign_type: 'search', brief: adGroupBrief }),
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error)
@@ -109,12 +127,11 @@ export function CampaignCanvas() {
       }
     }
 
-    // Auto-select first ad group tab
     setActiveAdGroupId(filledGroups[0].id)
     update({ is_generating: false, generating_index: -1 })
   }
 
-  // Generate for non-Search (single set of assets)
+  // Generate for non-Search
   async function handleGenerateSingle() {
     if (!state.campaign_type || !state.brief.product) return
     update({ is_generating: true, error: null })
@@ -163,7 +180,7 @@ export function CampaignCanvas() {
             campaign_type: 'search',
             settings: state.settings,
             ad_groups: state.ad_groups.filter(ag => ag.name.trim() && ag.assets),
-            keywords: state.brief.keywords || [],
+            // keywords live per-ad-group; no shared keyword list needed
           }
         : {
             campaign_id: campaignId,
@@ -189,59 +206,52 @@ export function CampaignCanvas() {
     }
   }
 
-  // Check if all filled ad groups have assets
   const filledAdGroups = state.ad_groups.filter(ag => ag.name.trim())
   const allGenerated = filledAdGroups.length > 0 && filledAdGroups.every(ag => ag.assets)
-  const activeAdGroup = state.ad_groups.find(ag => ag.id === activeAdGroupId) || filledAdGroups[0]
+  const activeAdGroup = state.ad_groups.find(ag => ag.id === activeAdGroupId) ?? filledAdGroups[0]
 
-  // Section numbers shift depending on whether Search is selected
-  const sectionNums = isSearch
-    ? { package: 2, adGroups: 3, brief: 4, keywords: 5, settings: 6, generate: 7, review: 8 }
-    : { package: 0, adGroups: 0, brief: 2, keywords: 3, settings: 4, generate: 5, review: 6 }
+  // Total keywords across all ad groups
+  const totalKwSelected = isSearch
+    ? state.ad_groups.reduce((sum, ag) => sum + ag.keywords.filter(k => k.selected).length, 0)
+    : (state.brief.keywords?.filter(k => k.selected).length ?? 0)
 
-  // Generation status label
   const genStatus = isSearch
     ? allGenerated
       ? `${filledAdGroups.length} ad groups generated`
-      : filledAdGroups.length
-        ? 'Ready to generate'
-        : 'Add products first'
-    : state.assets
-      ? 'Generated'
-      : 'Ready to generate'
+      : filledAdGroups.length ? 'Ready to generate' : 'Add products first'
+    : state.assets ? 'Generated' : 'Ready to generate'
+
+  // Dynamic section numbers
+  const n = isSearch
+    ? { pkg: 2, groups: 3, details: 4, brief: 5, settings: 6, gen: 7, review: 8 }
+    : { pkg: 0, groups: 0, details: 0, brief: 2, settings: 3, gen: 4, review: 5 }
 
   return (
     <div className="grid grid-cols-[1fr_300px] gap-5 max-w-7xl mx-auto px-5 py-5">
-      {/* Main canvas */}
       <div>
-        {/* Step 1: Campaign Type */}
+
+        {/* 1. Campaign Type */}
         <SectionCard num={1} title="Campaign Type" status={state.campaign_type || 'Not selected'} defaultOpen>
-          <CampaignTypeSelector
-            selected={state.campaign_type}
-            onSelect={handleSelectType}
-          />
+          <CampaignTypeSelector selected={state.campaign_type} onSelect={handleSelectType} />
         </SectionCard>
 
-        {/* Step 2: PPC Package — Search only */}
+        {/* 2. PPC Package — Search only */}
         {isSearch && (
           <SectionCard
-            num={sectionNums.package}
+            num={n.pkg}
             title="PPC Package"
             status={state.ppc_package ? PPC_PACKAGE_CONFIG[state.ppc_package].label : 'Not selected'}
           >
-            <PackageSelector
-              selected={state.ppc_package}
-              onSelect={handleSelectPackage}
-            />
+            <PackageSelector selected={state.ppc_package} onSelect={handleSelectPackage} />
           </SectionCard>
         )}
 
-        {/* Step 3: Ad Groups — Search only, after package selected */}
+        {/* 3. Products / Services — Search only */}
         {isSearch && state.ppc_package && (
           <SectionCard
-            num={sectionNums.adGroups}
-            title="Products / Services (Ad Groups)"
-            status={`${filledAdGroups.length} of ${PPC_PACKAGE_CONFIG[state.ppc_package].maxAdGroups} added`}
+            num={n.groups}
+            title="Products / Services"
+            status={`${filledAdGroups.length} / ${PPC_PACKAGE_CONFIG[state.ppc_package].maxAdGroups} added`}
           >
             <AdGroupManager
               adGroups={state.ad_groups}
@@ -251,35 +261,37 @@ export function CampaignCanvas() {
           </SectionCard>
         )}
 
+        {/* 4. Ad Group Details (URL, USPs, Keywords, Negatives) — Search only */}
+        {isSearch && filledAdGroups.length > 0 && (
+          <SectionCard
+            num={n.details}
+            title="Ad Group Details — Keywords & USPs"
+            status={`${totalKwSelected} keywords · ${state.ad_groups.reduce((s, ag) => s + ag.negative_keywords.length, 0)} negatives`}
+          >
+            <AdGroupDetails
+              adGroups={state.ad_groups}
+              onChange={adGroups => update({ ad_groups: adGroups })}
+            />
+          </SectionCard>
+        )}
+
         {/* Brief */}
         <SectionCard
-          num={sectionNums.brief}
-          title="Campaign Brief"
-          status={state.brief.product ? 'Complete' : 'In progress'}
+          num={isSearch ? n.brief : 2}
+          title={isSearch ? 'Campaign Brief (Shared)' : 'Brief & Landing Page'}
+          status={state.brief.brand_name ? 'Complete' : 'In progress'}
         >
           <BriefForm
             brief={state.brief}
             onChange={updates => update({ brief: { ...state.brief, ...updates } })}
-            hideProduct={isSearch}
-          />
-        </SectionCard>
-
-        {/* Keywords */}
-        <SectionCard
-          num={sectionNums.keywords}
-          title="Keyword Research"
-          status={`${state.brief.keywords?.filter(k => k.selected).length || 0} selected`}
-        >
-          <KeywordResearch
-            keywords={state.brief.keywords || []}
-            onChange={keywords => update({ brief: { ...state.brief, keywords } })}
+            searchMode={isSearch}
           />
         </SectionCard>
 
         {/* Settings */}
         {state.campaign_type && (
           <SectionCard
-            num={sectionNums.settings}
+            num={isSearch ? n.settings : 3}
             title="Campaign Settings"
             status={state.settings.budget_daily ? `R${state.settings.budget_daily}/day` : 'Not set'}
           >
@@ -291,8 +303,18 @@ export function CampaignCanvas() {
           </SectionCard>
         )}
 
+        {/* Non-Search: Keyword Research (shared) */}
+        {!isSearch && (
+          <SectionCard num={4} title="Keyword Research" status={`${state.brief.keywords?.filter(k => k.selected).length || 0} selected`}>
+            <KeywordResearch
+              keywords={state.brief.keywords || []}
+              onChange={keywords => update({ brief: { ...state.brief, keywords } })}
+            />
+          </SectionCard>
+        )}
+
         {/* Generate */}
-        <SectionCard num={sectionNums.generate} title="AI Copy Generation" status={genStatus}>
+        <SectionCard num={isSearch ? n.gen : 5} title="AI Copy Generation" status={genStatus}>
           {isSearch ? (
             <div className="space-y-3">
               {state.is_generating && (
@@ -311,7 +333,7 @@ export function CampaignCanvas() {
               )}
               {allGenerated ? (
                 <p className="text-sm text-emerald-600 font-medium">
-                  All {filledAdGroups.length} ad groups generated — review below
+                  All {filledAdGroups.length} ad groups generated — review below ↓
                 </p>
               ) : (
                 <button
@@ -341,39 +363,33 @@ export function CampaignCanvas() {
           {state.error && <p className="text-red-500 text-sm mt-2">{state.error}</p>}
         </SectionCard>
 
-        {/* Review — Search: tabs per ad group */}
+        {/* Review — Search: tabbed per ad group */}
         {isSearch && allGenerated && (
-          <SectionCard num={sectionNums.review} title="Review & Ad Strength" status="Review required" defaultOpen>
-            {/* Ad group tabs */}
+          <SectionCard num={n.review} title="Review & Ad Strength" status="Review required" defaultOpen>
             <div className="flex flex-wrap gap-2 mb-5">
               {filledAdGroups.map(ag => (
                 <button
                   key={ag.id}
                   onClick={() => setActiveAdGroupId(ag.id)}
                   className={`px-3 py-1.5 rounded-full text-xs font-heading font-bold transition-all ${
-                    activeAdGroup?.id === ag.id
-                      ? 'bg-navy text-white'
-                      : 'bg-cloud text-navy hover:bg-navy/10'
+                    activeAdGroup?.id === ag.id ? 'bg-navy text-white' : 'bg-cloud text-navy hover:bg-navy/10'
                   }`}
                 >
                   {ag.name}
                 </button>
               ))}
             </div>
-
             {activeAdGroup?.assets && (
               <ReviewAssets
                 key={activeAdGroup.id}
                 assets={activeAdGroup.assets}
-                brief={{ ...state.brief, product: activeAdGroup.name }}
+                brief={{ ...state.brief, product: activeAdGroup.name, keywords: activeAdGroup.keywords }}
                 campaignType="search"
-                onChange={assets => {
-                  update({
-                    ad_groups: state.ad_groups.map(ag =>
-                      ag.id === activeAdGroup.id ? { ...ag, assets } : ag
-                    ),
-                  })
-                }}
+                onChange={assets => update({
+                  ad_groups: state.ad_groups.map(ag =>
+                    ag.id === activeAdGroup.id ? { ...ag, assets } : ag
+                  ),
+                })}
                 onPublish={handlePublish}
                 isPublishing={state.is_publishing}
                 publishError={state.error}
@@ -384,7 +400,7 @@ export function CampaignCanvas() {
 
         {/* Review — non-Search */}
         {!isSearch && state.assets && state.campaign_type && (
-          <SectionCard num={sectionNums.review} title="Review & Ad Strength" status="Review required" defaultOpen>
+          <SectionCard num={n.review} title="Review & Ad Strength" status="Review required" defaultOpen>
             <ReviewAssets
               assets={state.assets}
               brief={state.brief}
@@ -400,19 +416,15 @@ export function CampaignCanvas() {
 
       {/* Sidebar */}
       <div className="space-y-4">
-        <ClientSelector
-          selectedId={state.client_id}
-          onSelect={id => update({ client_id: id })}
-        />
+        <ClientSelector selectedId={state.client_id} onSelect={id => update({ client_id: id })} />
         <ProgressTracker currentStep={
           !state.campaign_type ? 0
           : isSearch && !state.ppc_package ? 1
           : isSearch && !filledAdGroups.length ? 2
           : !state.brief.brand_name ? 3
-          : !state.brief.keywords?.some(k => k.selected) ? 4
-          : !state.settings.budget_daily ? 5
-          : allGenerated ? 7
-          : 6
+          : !state.settings.budget_daily ? 4
+          : allGenerated ? 6
+          : 5
         } />
         <BestPracticesPanel campaignType={state.campaign_type} />
       </div>

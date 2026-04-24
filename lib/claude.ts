@@ -5,17 +5,23 @@ import { Brief, CampaignType, GeneratedAssets } from '@/types'
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export function buildPrompt(brief: Brief, campaignType: CampaignType): string {
-  const selectedKeywords = brief.keywords
+  const selectedKeywords = (brief.keywords ?? [])
     .filter(k => k.selected)
     .map(k => `${k.text} (${k.match_type})`)
-    .join(', ')
+    .join(', ') || 'None provided'
+
+  const usps = (brief.usps ?? []).length > 0
+    ? brief.usps.join(', ')
+    : 'Not specified'
+
+  const landingPage = brief.url ? `\nLANDING PAGE: ${brief.url}` : ''
 
   return `You are an expert Google Ads copywriter. Generate campaign assets for a ${campaignType.toUpperCase()} campaign.
 
 BRAND: ${brief.brand_name}
 PRODUCT/SERVICE: ${brief.product}
 TARGET AUDIENCE: ${brief.audience}
-KEY USPs: ${brief.usps.join(', ')}
+KEY USPs: ${usps}${landingPage}
 TONE: ${brief.tone}
 CAMPAIGN GOAL: ${brief.goal}
 SELECTED KEYWORDS: ${selectedKeywords}

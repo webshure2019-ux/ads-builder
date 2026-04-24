@@ -14,7 +14,7 @@ export function AdGroupManager({ adGroups, ppcPackage, onChange }: Props) {
 
   function addGroup() {
     if (adGroups.length >= maxGroups) return
-    onChange([...adGroups, { id: crypto.randomUUID(), name: '' }])
+    onChange([...adGroups, { id: crypto.randomUUID(), name: '', usps: [], keywords: [], negative_keywords: [] }])
   }
 
   function removeGroup(id: string) {

@@ -5,7 +5,7 @@ import { Brief, ToneType, GoalType } from '@/types'
 interface Props {
   brief: Partial<Brief>
   onChange: (updates: Partial<Brief>) => void
-  hideProduct?: boolean  // Search campaigns use ad group names instead
+  searchMode?: boolean  // Search campaigns: only show shared fields (brand, audience, tone, goal)
 }
 
 const TONES: ToneType[] = ['professional', 'friendly', 'urgent', 'authoritative', 'conversational']
@@ -15,7 +15,7 @@ const GOALS: { value: GoalType; label: string }[] = [
   { value: 'awareness', label: 'Brand Awareness' },
 ]
 
-export function BriefForm({ brief, onChange, hideProduct = false }: Props) {
+export function BriefForm({ brief, onChange, searchMode = false }: Props) {
   const [scraping, setScraping] = useState(false)
   const [scrapeError, setScrapeError] = useState('')
 
@@ -48,6 +48,53 @@ export function BriefForm({ brief, onChange, hideProduct = false }: Props) {
   const input = 'w-full bg-mist border border-cloud rounded-lg px-3 py-2.5 text-sm text-navy focus:outline-none focus:border-cyan'
   const label = 'block text-[10px] font-heading font-bold uppercase tracking-wider text-teal mb-1'
 
+  // Search mode: only brand name, audience, tone, goal are shared
+  // URL / product / USPs live per ad group in AdGroupDetails
+  if (searchMode) {
+    return (
+      <div className="space-y-4">
+        <p className="text-xs text-navy/50 italic bg-cloud/60 border border-cloud rounded-lg px-3 py-2">
+          These fields apply to the whole campaign. Landing page URL, USPs, and keywords are set per product in the step above.
+        </p>
+        <div>
+          <label className={label}>Brand Name</label>
+          <input
+            className={input}
+            value={brief.brand_name || ''}
+            onChange={e => onChange({ brand_name: e.target.value })}
+            placeholder="e.g. Webshure"
+          />
+        </div>
+        <div>
+          <label className={label}>Target Audience</label>
+          <input
+            className={input}
+            value={brief.audience || ''}
+            onChange={e => onChange({ audience: e.target.value })}
+            placeholder="e.g. Small-to-medium businesses looking to grow online"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={label}>Campaign Goal</label>
+            <select className={input} value={brief.goal || ''} onChange={e => onChange({ goal: e.target.value as GoalType })}>
+              <option value="">Select goal...</option>
+              {GOALS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={label}>Tone</label>
+            <select className={input} value={brief.tone || ''} onChange={e => onChange({ tone: e.target.value as ToneType })}>
+              <option value="">Select tone...</option>
+              {TONES.map(t => <option key={t} value={t} className="capitalize">{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+            </select>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Full brief mode for non-Search campaigns
   return (
     <div className="space-y-4">
       <div>
@@ -71,13 +118,11 @@ export function BriefForm({ brief, onChange, hideProduct = false }: Props) {
         {scrapeError && <p className="text-red-500 text-xs mt-1">{scrapeError}</p>}
       </div>
 
-      <div className={hideProduct ? '' : 'grid grid-cols-2 gap-4'}>
-        {!hideProduct && (
-          <div>
-            <label className={label}>Product / Service</label>
-            <input className={input} value={brief.product || ''} onChange={e => onChange({ product: e.target.value })} placeholder="e.g. PPC Management Services" />
-          </div>
-        )}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={label}>Product / Service</label>
+          <input className={input} value={brief.product || ''} onChange={e => onChange({ product: e.target.value })} placeholder="e.g. PPC Management Services" />
+        </div>
         <div>
           <label className={label}>Brand Name</label>
           <input className={input} value={brief.brand_name || ''} onChange={e => onChange({ brand_name: e.target.value })} placeholder="e.g. Webshure" />
