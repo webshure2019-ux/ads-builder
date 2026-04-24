@@ -54,6 +54,97 @@ function isActive(status: string) {
   return status === 'ENABLED' || status === '2'
 }
 
+// ─── Inline budget editor ──────────────────────────────────────────────────────
+function BudgetCell({
+  campaign,
+  clientId,
+  currency,
+  onUpdated,
+}: {
+  campaign:  CampaignMetrics
+  clientId:  string
+  currency:  string
+  onUpdated: (newBudget: number) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [value,   setValue]   = useState(String(campaign.daily_budget))
+  const [saving,  setSaving]  = useState(false)
+  const [error,   setError]   = useState('')
+
+  async function save() {
+    const amount = parseFloat(value)
+    if (!Number.isFinite(amount) || amount <= 0) { setError('Enter a valid amount'); return }
+    setSaving(true)
+    setError('')
+    try {
+      const res = await fetch('/api/campaign-budget', {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          client_account_id:    clientId,
+          budget_resource_name: campaign.budget_resource_name,
+          daily_budget:         amount,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      onUpdated(amount)
+      setEditing(false)
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <button
+        onClick={() => { setValue(String(campaign.daily_budget)); setEditing(true) }}
+        className="group flex items-center gap-1.5 text-right"
+        title="Click to edit budget"
+      >
+        <span className="tabular-nums text-navy/80 text-sm">
+          {currency} {campaign.daily_budget.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+        <span className="text-[10px] text-navy/30 group-hover:text-cyan transition-colors">✏️</span>
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1 min-w-[140px]">
+      <div className="flex items-center gap-1.5">
+        <span className="text-[11px] text-teal flex-shrink-0">{currency}</span>
+        <input
+          type="number"
+          min="1"
+          step="0.01"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
+          className="w-24 border border-cyan rounded-lg px-2 py-1 text-xs text-navy focus:outline-none bg-white tabular-nums"
+          autoFocus
+        />
+        <button
+          onClick={save}
+          disabled={saving}
+          className="text-[11px] font-bold bg-cyan text-navy px-2 py-1 rounded-lg hover:bg-cyan/80 disabled:opacity-50 transition-colors whitespace-nowrap"
+        >
+          {saving ? '…' : 'Save'}
+        </button>
+        <button
+          onClick={() => setEditing(false)}
+          className="text-[11px] text-navy/40 hover:text-navy px-1 py-1 transition-colors"
+        >
+          ✕
+        </button>
+      </div>
+      {error && <p className="text-[10px] text-red-500">{error}</p>}
+    </div>
+  )
+}
+
 // ─── Pause / Resume button ─────────────────────────────────────────────────────
 function StatusToggleBtn({
   campaignId,
@@ -132,8 +223,12 @@ export function CampaignsTable({
   activeDrillId?: string
   onDrill?:      (id: string, name: string, view: DrillView) => void
 }) {
-  // Local copy so optimistic status updates don't require a full refetch
+  // Local copy so optimistic updates don't require a full refetch
   const [campaigns, setCampaigns] = useState<CampaignMetrics[]>(initialCampaigns)
+
+  function handleBudgetUpdate(campaignId: string, newBudget: number) {
+    setCampaigns(prev => prev.map(c => c.id === campaignId ? { ...c, daily_budget: newBudget } : c))
+  }
   const [sortKey,   setSortKey]   = useState<SortKey>('cost')
   const [sortDir,   setSortDir]   = useState<'asc' | 'desc'>('desc')
 
@@ -204,6 +299,9 @@ export function CampaignsTable({
               <th className="text-left px-4 py-3.5 text-[10px] font-heading font-bold uppercase tracking-wider text-teal whitespace-nowrap">
                 Status
               </th>
+              <th className="text-right px-4 py-3.5 text-[10px] font-heading font-bold uppercase tracking-wider text-teal whitespace-nowrap">
+                Daily Budget
+              </th>
               {COLUMNS.map(col => (
                 <th
                   key={col.key}
@@ -257,6 +355,16 @@ export function CampaignsTable({
                       }`} />
                       {active ? 'Active' : 'Paused'}
                     </span>
+                  </td>
+
+                  {/* Daily budget (editable) */}
+                  <td className="px-4 py-3.5 text-right">
+                    <BudgetCell
+                      campaign={c}
+                      clientId={clientId}
+                      currency={currency}
+                      onUpdated={newBudget => handleBudgetUpdate(c.id, newBudget)}
+                    />
                   </td>
 
                   {/* Metric cells */}
@@ -336,7 +444,8 @@ export function CampaignsTable({
               <td className="px-4 py-3.5 text-right tabular-nums font-bold text-navy text-xs whitespace-nowrap">
                 {totalConvRate.toFixed(2)}%
               </td>
-              {/* Empty actions + view columns */}
+              {/* Empty budget + actions + view columns */}
+              <td />
               <td />
               <td />
             </tr>

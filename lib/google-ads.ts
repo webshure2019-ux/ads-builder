@@ -289,16 +289,18 @@ export async function getClientStats(
 }
 
 export interface CampaignMetrics {
-  id:              string
-  name:            string
-  status:          string  // 'ENABLED' | 'PAUSED' | 'REMOVED'
-  channel_type:    string  // 'SEARCH' | 'DISPLAY' | 'SHOPPING' | 'VIDEO' | 'PERFORMANCE_MAX' | …
-  impressions:     number
-  clicks:          number
-  cost:            number
-  conversions:     number
-  ctr:             number
-  conversion_rate: number
+  id:                   string
+  name:                 string
+  status:               string
+  channel_type:         string
+  daily_budget:         number   // ZAR / account currency
+  budget_resource_name: string   // e.g. customers/123/campaignBudgets/456
+  impressions:          number
+  clicks:               number
+  cost:                 number
+  conversions:          number
+  ctr:                  number
+  conversion_rate:      number
 }
 
 export async function getClientCampaigns(
@@ -318,6 +320,8 @@ export async function getClientCampaigns(
       campaign.name,
       campaign.status,
       campaign.advertising_channel_type,
+      campaign.campaign_budget,
+      campaign_budget.amount_micros,
       metrics.impressions,
       metrics.clicks,
       metrics.cost_micros,
@@ -328,9 +332,9 @@ export async function getClientCampaigns(
     ORDER BY metrics.cost_micros DESC
   `) as any[]
 
-  // Aggregate by campaign ID (GAQL may return one row per date if segmented)
   const byCampaign = new Map<string, {
     name: string; status: string; channel_type: string
+    budget_resource_name: string; daily_budget_micros: number
     impressions: number; clicks: number; cost: number; conversions: number
   }>()
 
@@ -345,13 +349,15 @@ export async function getClientCampaigns(
       prev.conversions += r.metrics?.conversions  ?? 0
     } else {
       byCampaign.set(id, {
-        name:         r.campaign?.name                         ?? 'Unknown',
-        status:       String(r.campaign?.status               ?? 'UNKNOWN'),
-        channel_type: String(r.campaign?.advertising_channel_type ?? 'UNKNOWN'),
-        impressions:  r.metrics?.impressions ?? 0,
-        clicks:       r.metrics?.clicks      ?? 0,
-        cost:         (r.metrics?.cost_micros ?? 0) / 1_000_000,
-        conversions:  r.metrics?.conversions  ?? 0,
+        name:                 r.campaign?.name ?? 'Unknown',
+        status:               String(r.campaign?.status ?? 'UNKNOWN'),
+        channel_type:         String(r.campaign?.advertising_channel_type ?? 'UNKNOWN'),
+        budget_resource_name: r.campaign?.campaign_budget ?? '',
+        daily_budget_micros:  r.campaign_budget?.amount_micros ?? 0,
+        impressions:          r.metrics?.impressions ?? 0,
+        clicks:               r.metrics?.clicks      ?? 0,
+        cost:                 (r.metrics?.cost_micros ?? 0) / 1_000_000,
+        conversions:          r.metrics?.conversions  ?? 0,
       })
     }
   }
@@ -359,15 +365,17 @@ export async function getClientCampaigns(
   return Array.from(byCampaign.entries())
     .map(([id, c]) => ({
       id,
-      name:            c.name,
-      status:          c.status,
-      channel_type:    c.channel_type,
-      impressions:     c.impressions,
-      clicks:          c.clicks,
-      cost:            Math.round(c.cost * 100) / 100,
-      conversions:     Math.round(c.conversions * 100) / 100,
-      ctr:             c.impressions > 0 ? Math.round((c.clicks / c.impressions) * 10000) / 100 : 0,
-      conversion_rate: c.clicks > 0     ? Math.round((c.conversions / c.clicks) * 10000) / 100 : 0,
+      name:                 c.name,
+      status:               c.status,
+      channel_type:         c.channel_type,
+      daily_budget:         Math.round(c.daily_budget_micros / 1_000_000 * 100) / 100,
+      budget_resource_name: c.budget_resource_name,
+      impressions:          c.impressions,
+      clicks:               c.clicks,
+      cost:                 Math.round(c.cost * 100) / 100,
+      conversions:          Math.round(c.conversions * 100) / 100,
+      ctr:                  c.impressions > 0 ? Math.round((c.clicks / c.impressions) * 10000) / 100 : 0,
+      conversion_rate:      c.clicks > 0 ? Math.round((c.conversions / c.clicks) * 10000) / 100 : 0,
     }))
     .sort((a, b) => b.cost - a.cost)
 }
@@ -533,6 +541,7 @@ export interface AdData {
   ad_group_name: string
   type:          string
   status:        string
+  ad_strength:   string  // 'EXCELLENT' | 'GOOD' | 'AVERAGE' | 'POOR' | 'PENDING' | 'UNKNOWN'
   headlines:     string[]
   descriptions:  string[]
   final_url:     string
@@ -540,6 +549,12 @@ export interface AdData {
   clicks:        number
   cost:          number
   ctr:           number
+}
+
+export interface AssetPerformance {
+  text:       string
+  field_type: string  // 'HEADLINE' | 'DESCRIPTION'
+  label:      string  // 'BEST' | 'GOOD' | 'LOW' | 'LEARNING' | 'UNRATED'
 }
 
 export async function getAds(
@@ -562,6 +577,7 @@ export async function getAds(
       ad_group_ad.ad.final_urls,
       ad_group_ad.ad.responsive_search_ad.headlines,
       ad_group_ad.ad.responsive_search_ad.descriptions,
+      ad_group_ad.ad_strength,
       ad_group_ad.status,
       ad_group.id,
       ad_group.name,
@@ -577,7 +593,7 @@ export async function getAds(
 
   const byAd = new Map<string, {
     ad_group_id: string; ad_group_name: string; type: string; status: string
-    headlines: string[]; descriptions: string[]; final_url: string
+    ad_strength: string; headlines: string[]; descriptions: string[]; final_url: string
     impressions: number; clicks: number; costMicros: number
   }>()
 
@@ -598,8 +614,9 @@ export async function getAds(
       byAd.set(id, {
         ad_group_id:   String(r.ad_group?.id   ?? ''),
         ad_group_name: r.ad_group?.name         ?? 'Unknown',
-        type:          String(r.ad_group_ad?.ad?.type ?? 'UNKNOWN'),
-        status:        String(r.ad_group_ad?.status    ?? 'UNKNOWN'),
+        type:          String(r.ad_group_ad?.ad?.type       ?? 'UNKNOWN'),
+        status:        String(r.ad_group_ad?.status          ?? 'UNKNOWN'),
+        ad_strength:   String(r.ad_group_ad?.ad_strength     ?? 'UNKNOWN'),
         headlines:     rsaHeadlines,
         descriptions:  rsaDescriptions,
         final_url:     (r.ad_group_ad?.ad?.final_urls ?? [])[0] ?? '',
@@ -617,6 +634,7 @@ export async function getAds(
       ad_group_name: a.ad_group_name,
       type:          a.type,
       status:        a.status,
+      ad_strength:   a.ad_strength,
       headlines:     a.headlines,
       descriptions:  a.descriptions,
       final_url:     a.final_url,
@@ -626,6 +644,124 @@ export async function getAds(
       ctr:           a.impressions > 0 ? Math.round((a.clicks / a.impressions) * 10000) / 100 : 0,
     }))
     .sort((a, b) => b.cost - a.cost)
+}
+
+// ─── Asset-level performance labels ───────────────────────────────────────────
+export async function getAdAssetPerformance(
+  clientAccountId: string,
+  adGroupId: string,
+  adId: string
+): Promise<AssetPerformance[]> {
+  if (!CAMPAIGN_ID_RE.test(adGroupId)) throw new Error('Invalid ad group ID')
+  if (!CAMPAIGN_ID_RE.test(adId))      throw new Error('Invalid ad ID')
+
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer        = getClientCustomer(cleanedClientId)
+  // Resource name constructed from validated numeric IDs only
+  const resourceName = `customers/${cleanedClientId}/adGroupAds/${adGroupId}~${adId}`
+
+  const results = await customer.query(`
+    SELECT
+      ad_group_ad_asset_view.field_type,
+      ad_group_ad_asset_view.asset_performance_label,
+      asset.text_asset.text
+    FROM ad_group_ad_asset_view
+    WHERE ad_group_ad.resource_name = '${resourceName}'
+  `) as any[]
+
+  return results
+    .map((r: any) => ({
+      text:       String(r.asset?.text_asset?.text ?? '').trim(),
+      field_type: String(r.ad_group_ad_asset_view?.field_type ?? '').toUpperCase(),
+      label:      String(r.ad_group_ad_asset_view?.asset_performance_label ?? 'UNRATED').toUpperCase(),
+    }))
+    .filter(a => a.text)
+}
+
+// ─── Update RSA headlines / descriptions ──────────────────────────────────────
+export async function updateRSA(
+  clientAccountId: string,
+  adGroupId: string,
+  adId: string,
+  headlines: string[],
+  descriptions: string[]
+): Promise<void> {
+  if (!CAMPAIGN_ID_RE.test(adGroupId)) throw new Error('Invalid ad group ID')
+  if (!CAMPAIGN_ID_RE.test(adId))      throw new Error('Invalid ad ID')
+  if (headlines.length < 3 || headlines.length > 15)   throw new Error('RSA must have 3–15 headlines')
+  if (descriptions.length < 2 || descriptions.length > 4) throw new Error('RSA must have 2–4 descriptions')
+  for (const h of headlines)    if (h.length > 30) throw new Error(`Headline exceeds 30 chars: "${h.slice(0,20)}…"`)
+  for (const d of descriptions) if (d.length > 90) throw new Error(`Description exceeds 90 chars: "${d.slice(0,20)}…"`)
+
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer        = getClientCustomer(cleanedClientId)
+  const resourceName    = `customers/${cleanedClientId}/adGroupAds/${adGroupId}~${adId}`
+
+  await (customer.adGroupAds as any).update([{
+    resource_name: resourceName,
+    ad: {
+      responsive_search_ad: {
+        headlines:    headlines.map(text    => ({ text })),
+        descriptions: descriptions.map(text => ({ text })),
+      },
+    },
+  }])
+}
+
+// ─── Update campaign daily budget ─────────────────────────────────────────────
+export async function setCampaignBudget(
+  clientAccountId: string,
+  budgetResourceName: string,
+  dailyBudgetAmount: number
+): Promise<void> {
+  // Validate resource name is in the expected format (constructed server-side only)
+  if (!/^customers\/\d+\/campaignBudgets\/\d+$/.test(budgetResourceName)) {
+    throw new Error('Invalid budget resource name')
+  }
+  if (!Number.isFinite(dailyBudgetAmount) || dailyBudgetAmount <= 0) {
+    throw new Error('Budget must be a positive number')
+  }
+  const customer = getClientCustomer(clientAccountId)
+  await (customer.campaignBudgets as any).update([{
+    resource_name:  budgetResourceName,
+    amount_micros:  Math.round(dailyBudgetAmount * 1_000_000),
+  }])
+}
+
+// ─── Set ad-group status ──────────────────────────────────────────────────────
+const AD_GROUP_STATUS_MAP = { ENABLED: 2, PAUSED: 3 } as const
+
+export async function setAdGroupStatus(
+  clientAccountId: string,
+  adGroupId: string,
+  status: 'ENABLED' | 'PAUSED'
+): Promise<void> {
+  if (!CAMPAIGN_ID_RE.test(adGroupId)) throw new Error('Invalid ad group ID')
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer        = getClientCustomer(cleanedClientId)
+  await (customer.adGroups as any).update([{
+    resource_name: `customers/${cleanedClientId}/adGroups/${adGroupId}`,
+    status:        AD_GROUP_STATUS_MAP[status],
+  }])
+}
+
+// ─── Set ad (adGroupAd) status ────────────────────────────────────────────────
+const AD_STATUS_MAP = { ENABLED: 2, PAUSED: 3 } as const
+
+export async function setAdStatus(
+  clientAccountId: string,
+  adGroupId: string,
+  adId: string,
+  status: 'ENABLED' | 'PAUSED'
+): Promise<void> {
+  if (!CAMPAIGN_ID_RE.test(adGroupId)) throw new Error('Invalid ad group ID')
+  if (!CAMPAIGN_ID_RE.test(adId))      throw new Error('Invalid ad ID')
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer        = getClientCustomer(cleanedClientId)
+  await (customer.adGroupAds as any).update([{
+    resource_name: `customers/${cleanedClientId}/adGroupAds/${adGroupId}~${adId}`,
+    status:        AD_STATUS_MAP[status],
+  }])
 }
 
 // Campaign status enum values used by the Google Ads API
