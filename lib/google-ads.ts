@@ -288,6 +288,174 @@ export async function getClientStats(
   return { daily, totals: sums, currency }
 }
 
+export interface CampaignMetrics {
+  id:              string
+  name:            string
+  status:          string  // 'ENABLED' | 'PAUSED' | 'REMOVED'
+  channel_type:    string  // 'SEARCH' | 'DISPLAY' | 'SHOPPING' | 'VIDEO' | 'PERFORMANCE_MAX' | …
+  impressions:     number
+  clicks:          number
+  cost:            number
+  conversions:     number
+  ctr:             number
+  conversion_rate: number
+}
+
+export async function getClientCampaigns(
+  clientAccountId: string,
+  startDate: string,
+  endDate: string
+): Promise<CampaignMetrics[]> {
+  validateDate(startDate, 'start_date')
+  validateDate(endDate, 'end_date')
+  if (startDate > endDate) throw new Error('start_date must be before end_date')
+
+  const customer = getClientCustomer(clientAccountId)
+
+  const results = await customer.query(`
+    SELECT
+      campaign.id,
+      campaign.name,
+      campaign.status,
+      campaign.advertising_channel_type,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.cost_micros,
+      metrics.conversions
+    FROM campaign
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.status != 'REMOVED'
+    ORDER BY metrics.cost_micros DESC
+  `) as any[]
+
+  // Aggregate by campaign ID (GAQL may return one row per date if segmented)
+  const byCampaign = new Map<string, {
+    name: string; status: string; channel_type: string
+    impressions: number; clicks: number; cost: number; conversions: number
+  }>()
+
+  for (const r of results) {
+    const id = String(r.campaign?.id ?? '')
+    if (!id || id === 'undefined') continue
+    const prev = byCampaign.get(id)
+    if (prev) {
+      prev.impressions += r.metrics?.impressions ?? 0
+      prev.clicks      += r.metrics?.clicks      ?? 0
+      prev.cost        += (r.metrics?.cost_micros ?? 0) / 1_000_000
+      prev.conversions += r.metrics?.conversions  ?? 0
+    } else {
+      byCampaign.set(id, {
+        name:         r.campaign?.name                         ?? 'Unknown',
+        status:       String(r.campaign?.status               ?? 'UNKNOWN'),
+        channel_type: String(r.campaign?.advertising_channel_type ?? 'UNKNOWN'),
+        impressions:  r.metrics?.impressions ?? 0,
+        clicks:       r.metrics?.clicks      ?? 0,
+        cost:         (r.metrics?.cost_micros ?? 0) / 1_000_000,
+        conversions:  r.metrics?.conversions  ?? 0,
+      })
+    }
+  }
+
+  return Array.from(byCampaign.entries())
+    .map(([id, c]) => ({
+      id,
+      name:            c.name,
+      status:          c.status,
+      channel_type:    c.channel_type,
+      impressions:     c.impressions,
+      clicks:          c.clicks,
+      cost:            Math.round(c.cost * 100) / 100,
+      conversions:     Math.round(c.conversions * 100) / 100,
+      ctr:             c.impressions > 0 ? Math.round((c.clicks / c.impressions) * 10000) / 100 : 0,
+      conversion_rate: c.clicks > 0     ? Math.round((c.conversions / c.clicks) * 10000) / 100 : 0,
+    }))
+    .sort((a, b) => b.cost - a.cost)
+}
+
+export interface ConversionAction {
+  name:     string
+  category: string
+  count:    number
+  value:    number
+}
+
+export async function getConversionBreakdown(
+  clientAccountId: string,
+  startDate: string,
+  endDate: string
+): Promise<ConversionAction[]> {
+  validateDate(startDate, 'start_date')
+  validateDate(endDate,   'end_date')
+  if (startDate > endDate) throw new Error('start_date must be before end_date')
+
+  const customer = getClientCustomer(clientAccountId)
+
+  const results = await customer.query(`
+    SELECT
+      conversion_action.name,
+      conversion_action.category,
+      metrics.conversions,
+      metrics.conversions_value
+    FROM conversion_action
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND metrics.conversions > 0
+    ORDER BY metrics.conversions DESC
+  `) as any[]
+
+  // Aggregate by action name across multiple date rows if any
+  const byAction = new Map<string, { category: string; count: number; value: number }>()
+
+  for (const r of results) {
+    const name = String(r.conversion_action?.name ?? 'Unknown')
+    const prev = byAction.get(name)
+    if (prev) {
+      prev.count += r.metrics?.conversions       ?? 0
+      prev.value += r.metrics?.conversions_value ?? 0
+    } else {
+      byAction.set(name, {
+        category: String(r.conversion_action?.category ?? 'DEFAULT'),
+        count:    r.metrics?.conversions       ?? 0,
+        value:    r.metrics?.conversions_value ?? 0,
+      })
+    }
+  }
+
+  return Array.from(byAction.entries())
+    .map(([name, d]) => ({
+      name,
+      category: d.category,
+      count:    Math.round(d.count * 100) / 100,
+      value:    Math.round(d.value * 100) / 100,
+    }))
+    .sort((a, b) => b.count - a.count)
+}
+
+// Campaign status enum values used by the Google Ads API
+const CAMPAIGN_STATUS = { ENABLED: 2, PAUSED: 3 } as const
+type CampaignStatusAction = 'ENABLED' | 'PAUSED'
+
+/**
+ * Pause or resume a campaign by resource name.
+ * campaignId is the numeric ID (e.g. "12345678").
+ */
+export async function setCampaignStatus(
+  clientAccountId: string,
+  campaignId: string,
+  status: CampaignStatusAction
+): Promise<void> {
+  const cleanedClientId = cleanId(clientAccountId)
+  // Validate that campaignId is a plain integer — never interpolated into GAQL
+  if (!/^\d+$/.test(campaignId)) throw new Error(`Invalid campaign ID: ${campaignId}`)
+
+  const customer = getClientCustomer(cleanedClientId)
+  const resourceName = `customers/${cleanedClientId}/campaigns/${campaignId}`
+
+  await customer.campaigns.update([{
+    resource_name: resourceName,
+    status: CAMPAIGN_STATUS[status],
+  }])
+}
+
 export async function publishPMaxCampaign(
   clientAccountId: string,
   name: string,

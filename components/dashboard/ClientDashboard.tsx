@@ -3,7 +3,8 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
 } from 'recharts'
-import type { DailyMetrics, AccountStats } from '@/lib/google-ads'
+import type { DailyMetrics, AccountStats, CampaignMetrics, ConversionAction } from '@/lib/google-ads'
+import { CampaignsTable } from '@/components/dashboard/CampaignsTable'
 
 interface GoogleClient { id: string; name: string }
 
@@ -268,48 +269,195 @@ function ExpandedChart({ cfg, daily, prevDaily, currency, onClose }: {
   )
 }
 
+// ─── Conversion category icons ─────────────────────────────────────────────────
+const CONV_CATEGORY_ICONS: Record<string, string> = {
+  PURCHASE:           '🛒',
+  LEAD:               '📋',
+  SUBMIT_LEAD_FORM:   '📝',
+  SIGNUP:             '✍️',
+  PHONE_CALL_LEAD:    '📞',
+  IMPORTED_LEAD:      '📥',
+  BOOK_APPOINTMENT:   '📅',
+  REQUEST_QUOTE:      '💬',
+  GET_DIRECTIONS:     '📍',
+  OUTBOUND_CLICK:     '🔗',
+  PAGE_VIEW:          '👁️',
+  DOWNLOAD:           '⬇️',
+  ADD_TO_CART:        '🛍️',
+  BEGIN_CHECKOUT:     '💳',
+  SUBSCRIBE_PAID:     '💰',
+  CONTACT:            '📬',
+  STORE_VISIT:        '🏪',
+  STORE_SALE:         '🏷️',
+  ENGAGEMENT:         '⭐',
+  DEFAULT:            '🎯',
+}
+
+// ─── Conversion breakdown panel ────────────────────────────────────────────────
+function ConversionBreakdownPanel({
+  actions,
+  loading,
+  error,
+  currency,
+}: {
+  actions:  ConversionAction[]
+  loading:  boolean
+  error:    string
+  currency: string
+}) {
+  const total = actions.reduce((s, a) => s + a.count, 0)
+
+  return (
+    <div className="mt-5 border-t border-cloud/60 pt-5">
+      <h4 className="font-heading font-bold text-navy text-sm mb-4">Conversion Breakdown</h4>
+
+      {loading && (
+        <div className="flex items-center gap-3 text-teal text-sm py-6 justify-center">
+          <div className="w-5 h-5 border-2 border-cyan border-t-transparent rounded-full animate-spin" />
+          Loading conversion actions…
+        </div>
+      )}
+
+      {error && !loading && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-600">
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && actions.length === 0 && (
+        <p className="text-sm text-teal text-center py-6">No conversion actions recorded in this period.</p>
+      )}
+
+      {!loading && !error && actions.length > 0 && (
+        <div className="space-y-3">
+          {actions.map(a => {
+            const pct     = total > 0 ? (a.count / total) * 100 : 0
+            const icon    = CONV_CATEGORY_ICONS[a.category] ?? CONV_CATEGORY_ICONS.DEFAULT
+            const hasVal  = a.value > 0
+            return (
+              <div key={a.name} className="group">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-base leading-none flex-shrink-0">{icon}</span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-navy truncate" title={a.name}>{a.name}</p>
+                      {hasVal && (
+                        <p className="text-[10px] text-teal mt-0.5">
+                          Value: {currency} {a.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+                    <span className="text-[11px] text-navy/50">{pct.toFixed(1)}%</span>
+                    <span className="font-heading font-bold text-navy text-sm tabular-nums">
+                      {a.count.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                    </span>
+                  </div>
+                </div>
+                {/* Bar */}
+                <div className="h-2 bg-cloud/60 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${pct}%`, backgroundColor: '#10b981' }}
+                  />
+                </div>
+              </div>
+            )
+          })}
+
+          {/* Total row */}
+          <div className="flex items-center justify-between pt-3 mt-1 border-t border-cloud">
+            <p className="text-[11px] font-heading font-bold uppercase tracking-wider text-teal">Total</p>
+            <p className="font-heading font-bold text-navy text-sm tabular-nums">
+              {total.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main dashboard ────────────────────────────────────────────────────────────
 export function ClientDashboard() {
-  const [clients,      setClients]      = useState<GoogleClient[]>([])
-  const [clientId,     setClientId]     = useState('')
-  const [preset,       setPreset]       = useState('30')
-  const [customStart,  setCustomStart]  = useState('')
-  const [customEnd,    setCustomEnd]    = useState('')
-  const [compare,      setCompare]      = useState(false)
-  const [stats,        setStats]        = useState<AccountStats | null>(null)
-  const [compareStats, setCompareStats] = useState<AccountStats | null>(null)
-  const [loading,      setLoading]      = useState(false)
-  const [error,        setError]        = useState('')
-  const [activeCard,   setActiveCard]   = useState<MetricKey | null>(null)
+  const [clients,          setClients]          = useState<GoogleClient[]>([])
+  const [clientId,         setClientId]         = useState('')
+  const [preset,           setPreset]           = useState('30')
+  const [customStart,      setCustomStart]       = useState('')
+  const [customEnd,        setCustomEnd]         = useState('')
+  const [compare,          setCompare]          = useState(false)
+  const [stats,            setStats]            = useState<AccountStats | null>(null)
+  const [compareStats,     setCompareStats]     = useState<AccountStats | null>(null)
+  const [campaigns,        setCampaigns]        = useState<CampaignMetrics[]>([])
+  const [campaignsLoading, setCampaignsLoading] = useState(false)
+  const [loading,          setLoading]          = useState(false)
+  const [error,            setError]            = useState('')
+  const [activeCard,       setActiveCard]       = useState<MetricKey | null>(null)
+  const [convActions,      setConvActions]      = useState<ConversionAction[]>([])
+  const [convLoading,      setConvLoading]      = useState(false)
+  const [convError,        setConvError]        = useState('')
 
   useEffect(() => {
     fetch('/api/clients').then(r => r.json()).then(d => setClients(d.clients || [])).catch(() => {})
   }, [])
+
+  // Lazily fetch conversion breakdown only when the conversions card is expanded
+  useEffect(() => {
+    if (activeCard !== 'conversions' || !clientId) return
+    const { start, end } = preset === 'custom'
+      ? { start: customStart, end: customEnd }
+      : getPresetRange(preset)
+    if (!start || !end) return
+
+    setConvLoading(true)
+    setConvError('')
+    fetch(`/api/conversion-breakdown?client_account_id=${clientId}&start_date=${start}&end_date=${end}`)
+      .then(async r => {
+        const d = await r.json()
+        if (!r.ok) throw new Error(d.error || 'Failed to load breakdown')
+        setConvActions(d.actions ?? [])
+      })
+      .catch(e => setConvError(String(e)))
+      .finally(() => setConvLoading(false))
+  }, [activeCard, clientId, preset, customStart, customEnd])
+
+  // Reset breakdown when client or date changes so stale data doesn't flash
+  useEffect(() => {
+    setConvActions([])
+    setConvError('')
+  }, [clientId, preset, customStart, customEnd])
 
   const fetchStats = useCallback(async (
     id: string, start: string, end: string, doCompare: boolean
   ) => {
     if (!id || !start || !end) return
     setLoading(true)
+    setCampaignsLoading(true)
     setError('')
 
     try {
       const prevRange = getPreviousRange(start, end)
-      const [res, cRes] = await Promise.all([
+      const [res, cRes, campRes] = await Promise.all([
         fetch(`/api/stats?client_account_id=${id}&start_date=${start}&end_date=${end}`),
         doCompare
           ? fetch(`/api/stats?client_account_id=${id}&start_date=${prevRange.start}&end_date=${prevRange.end}`)
           : Promise.resolve(null),
+        fetch(`/api/campaign-stats?client_account_id=${id}&start_date=${start}&end_date=${end}`),
       ])
 
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to load stats')
       setStats(data)
       setCompareStats(cRes ? await cRes.json() : null)
+
+      const campData = await campRes.json()
+      setCampaigns(campRes.ok ? (campData.campaigns ?? []) : [])
     } catch (e) {
       setError(String(e))
     } finally {
       setLoading(false)
+      setCampaignsLoading(false)
     }
   }, [])
 
@@ -479,10 +627,45 @@ export function ClientDashboard() {
                     currency={stats.currency}
                     onClose={() => setActiveCard(null)}
                   />
+                  {/* Conversion breakdown — only shown for the conversions card */}
+                  {activeCard === 'conversions' && (
+                    <div className="bg-white border border-cloud rounded-2xl px-6 pb-6 mt-4">
+                      <ConversionBreakdownPanel
+                        actions={convActions}
+                        loading={convLoading}
+                        error={convError}
+                        currency={stats.currency}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           )}
+
+          {/* ── Campaigns section ── */}
+          <div className="mt-2">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="font-heading font-bold text-navy text-lg">Campaigns</h3>
+                <p className="text-xs text-teal mt-0.5">Performance by campaign for the selected period</p>
+              </div>
+              {campaignsLoading && (
+                <div className="flex items-center gap-2 text-xs text-teal">
+                  <div className="w-4 h-4 border-2 border-cyan border-t-transparent rounded-full animate-spin" />
+                  Loading…
+                </div>
+              )}
+            </div>
+
+            {!campaignsLoading && (
+              <CampaignsTable
+                campaigns={campaigns}
+                currency={stats.currency}
+                clientId={clientId}
+              />
+            )}
+          </div>
         </>
       )}
     </div>
