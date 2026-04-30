@@ -5,16 +5,24 @@ import {
 } from 'recharts'
 import type { DailyMetrics, AccountStats, CampaignMetrics, ConversionAction } from '@/lib/google-ads'
 import { CampaignsTable } from '@/components/dashboard/CampaignsTable'
-import { CampaignDrillDown, type DrillView } from '@/components/dashboard/CampaignDrillDown'
 
 interface GoogleClient { id: string; name: string }
 
 // ─── Date helpers ──────────────────────────────────────────────────────────────
 function toYMD(d: Date) { return d.toISOString().split('T')[0] }
 
-function getPresetRange(preset: string): { start: string; end: string } {
-  const end   = new Date()
-  const start = new Date()
+function resolveRange(preset: string, customStart: string, customEnd: string): { start: string; end: string } {
+  if (preset === 'custom') return { start: customStart, end: customEnd }
+  if (preset === 'mtd') {
+    const now = new Date()
+    return { start: toYMD(new Date(now.getFullYear(), now.getMonth(), 1)), end: toYMD(now) }
+  }
+  if (preset === 'last_mo') {
+    const lastDay  = new Date(new Date().getFullYear(), new Date().getMonth(), 0)
+    const firstDay = new Date(lastDay.getFullYear(), lastDay.getMonth(), 1)
+    return { start: toYMD(firstDay), end: toYMD(lastDay) }
+  }
+  const end = new Date(), start = new Date()
   start.setDate(end.getDate() - parseInt(preset))
   return { start: toYMD(start), end: toYMD(end) }
 }
@@ -53,11 +61,13 @@ const CARDS: CardCfg[] = [
 ]
 
 const PRESETS = [
-  { label: '7D',     value: '7'      },
-  { label: '14D',    value: '14'     },
-  { label: '30D',    value: '30'     },
-  { label: '90D',    value: '90'     },
-  { label: 'Custom', value: 'custom' },
+  { label: '7D',      value: '7'       },
+  { label: '14D',     value: '14'      },
+  { label: '30D',     value: '30'      },
+  { label: '90D',     value: '90'      },
+  { label: 'MTD',     value: 'mtd'     },
+  { label: 'Last Mo', value: 'last_mo' },
+  { label: 'Custom',  value: 'custom'  },
 ]
 
 // ─── Delta badge ───────────────────────────────────────────────────────────────
@@ -403,6 +413,72 @@ function ConversionBreakdownPanel({
   )
 }
 
+// ─── Learning phase detection (mirrors CampaignsTable logic) ──────────────────
+const LEARNING_STATUSES_DB = new Set([
+  'LEARNING_NEW', 'LEARNING_SETTING_CHANGE', 'LEARNING_BUDGET_CHANGE',
+  'LEARNING_COMPOSITIONAL_CHANGE', 'LEARNING_CONVERSION_TYPE_CHANGE',
+  'LEARNING_CONVERSION_SETTING_CHANGE',
+  '2', '3', '4', '5', '6', '7',
+])
+const SMART_BIDDING_TYPES_DB = new Set([
+  'MAXIMIZE_CONVERSIONS', 'MAXIMIZE_CONVERSION_VALUE', 'TARGET_CPA', 'TARGET_ROAS',
+  'ENHANCED_CPC', '8', '9', '6', '7', '12',
+])
+
+function isCampaignLearning(c: CampaignMetrics) {
+  return LEARNING_STATUSES_DB.has(c.bidding_strategy_system_status)
+    && SMART_BIDDING_TYPES_DB.has(c.bidding_strategy_type)
+}
+
+function learningProgress(startDate: string): number {
+  if (!startDate) return 50
+  return Math.min(Math.floor((Date.now() - new Date(startDate).getTime()) / 86_400_000 / 30 * 100), 99)
+}
+
+// ─── Learning phase panel ──────────────────────────────────────────────────────
+function LearningBanner({ campaigns }: { campaigns: CampaignMetrics[] }) {
+  const learning = campaigns.filter(isCampaignLearning)
+  if (learning.length === 0) return null
+
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3.5 mb-4">
+      <div className="flex items-start gap-3">
+        <span className="text-lg flex-shrink-0 mt-0.5">🎓</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-bold text-amber-800 mb-0.5">
+            {learning.length} campaign{learning.length !== 1 ? 's' : ''} in learning phase
+          </p>
+          <p className="text-[11px] text-amber-700 mb-3 leading-relaxed">
+            Smart bidding is still collecting data — avoid major changes to budgets, bids, or targeting until learning completes (~30 days).
+          </p>
+          <div className="space-y-2.5">
+            {learning.slice(0, 5).map(c => {
+              const pct = learningProgress(c.start_date)
+              return (
+                <div key={c.id}>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[11px] font-medium text-amber-900 truncate max-w-[280px]" title={c.name}>{c.name}</p>
+                    <span className="text-[10px] font-bold text-amber-600 tabular-nums ml-3 flex-shrink-0">{pct}%</span>
+                  </div>
+                  <div className="h-1.5 bg-amber-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-amber-400 rounded-full transition-all duration-500"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+            {learning.length > 5 && (
+              <p className="text-[10px] text-amber-600">+{learning.length - 5} more campaigns in learning</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main dashboard ────────────────────────────────────────────────────────────
 export function ClientDashboard() {
   const [clients,          setClients]          = useState<GoogleClient[]>([])
@@ -421,7 +497,7 @@ export function ClientDashboard() {
   const [convActions,      setConvActions]      = useState<ConversionAction[]>([])
   const [convLoading,      setConvLoading]      = useState(false)
   const [convError,        setConvError]        = useState('')
-  const [drill,            setDrill]            = useState<{ id: string; name: string; view: DrillView; channelType: string } | null>(null)
+  const [campaignSearch,   setCampaignSearch]   = useState('')
 
   useEffect(() => {
     fetch('/api/clients').then(r => r.json()).then(d => setClients(d.clients || [])).catch(() => {})
@@ -430,9 +506,7 @@ export function ClientDashboard() {
   // Lazily fetch conversion breakdown only when the conversions card is expanded
   useEffect(() => {
     if (activeCard !== 'conversions' || !clientId) return
-    const { start, end } = preset === 'custom'
-      ? { start: customStart, end: customEnd }
-      : getPresetRange(preset)
+    const { start, end } = resolveRange(preset, customStart, customEnd)
     if (!start || !end) return
 
     setConvLoading(true)
@@ -447,11 +521,11 @@ export function ClientDashboard() {
       .finally(() => setConvLoading(false))
   }, [activeCard, clientId, preset, customStart, customEnd])
 
-  // Reset breakdown + drill-down when client or date changes so stale data doesn't flash
+  // Reset breakdown and search when client or date changes so stale data doesn't flash
   useEffect(() => {
     setConvActions([])
     setConvError('')
-    setDrill(null)
+    setCampaignSearch('')
   }, [clientId, preset, customStart, customEnd])
 
   const fetchStats = useCallback(async (
@@ -488,13 +562,11 @@ export function ClientDashboard() {
   }, [])
 
   function activeRange() {
-    return preset === 'custom'
-      ? { start: customStart, end: customEnd }
-      : getPresetRange(preset)
+    return resolveRange(preset, customStart, customEnd)
   }
 
   function run(id: string, p: string, cmp: boolean, cs: string, ce: string) {
-    const { start, end } = p === 'custom' ? { start: cs, end: ce } : getPresetRange(p)
+    const { start, end } = resolveRange(p, cs, ce)
     if (start && end) fetchStats(id, start, end, cmp)
   }
 
@@ -671,46 +743,51 @@ export function ClientDashboard() {
 
           {/* ── Campaigns section ── */}
           <div className="mt-2">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
               <div>
                 <h3 className="font-heading font-bold text-navy text-lg">Campaigns</h3>
                 <p className="text-xs text-teal mt-0.5">Performance by campaign for the selected period</p>
               </div>
-              {campaignsLoading && (
-                <div className="flex items-center gap-2 text-xs text-teal">
-                  <div className="w-4 h-4 border-2 border-cyan border-t-transparent rounded-full animate-spin" />
-                  Loading…
+              <div className="flex items-center gap-3 flex-wrap">
+                {/* Campaign search */}
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-navy/30 text-xs pointer-events-none">🔍</span>
+                  <input
+                    type="text"
+                    value={campaignSearch}
+                    onChange={e => setCampaignSearch(e.target.value)}
+                    placeholder="Search campaigns…"
+                    className="pl-8 pr-3 py-2 text-xs border border-cloud rounded-xl bg-white text-navy placeholder-navy/30 focus:outline-none focus:border-cyan w-52 transition-colors"
+                  />
+                  {campaignSearch && (
+                    <button
+                      onClick={() => setCampaignSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-navy/30 hover:text-navy text-sm transition-colors"
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
-              )}
+                {campaignsLoading && (
+                  <div className="flex items-center gap-2 text-xs text-teal">
+                    <div className="w-4 h-4 border-2 border-cyan border-t-transparent rounded-full animate-spin" />
+                    Loading…
+                  </div>
+                )}
+              </div>
             </div>
+
+            {!campaignsLoading && <LearningBanner campaigns={campaigns} />}
 
             {!campaignsLoading && (
               <CampaignsTable
-                campaigns={campaigns}
+                campaigns={campaigns.filter(c =>
+                  !campaignSearch || c.name.toLowerCase().includes(campaignSearch.toLowerCase())
+                )}
                 currency={stats.currency}
                 clientId={clientId}
-                activeDrillId={drill?.id}
-                onDrill={(id, name, view, channelType) =>
-                  setDrill(prev =>
-                    prev?.id === id && prev.view === view ? null : { id, name, view, channelType }
-                  )
-                }
-              />
-            )}
-
-            {/* Drill-down panel — shown below table when a campaign is selected */}
-            {drill && rs && re && (
-              <CampaignDrillDown
-                key={`${drill.id}-${drill.view}`}
-                campaignId={drill.id}
-                campaignName={drill.name}
-                clientId={clientId}
-                currency={stats.currency}
                 startDate={rs}
                 endDate={re}
-                initialView={drill.view}
-                channelType={drill.channelType}
-                onClose={() => setDrill(null)}
               />
             )}
           </div>

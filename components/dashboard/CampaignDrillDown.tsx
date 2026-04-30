@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { AdGroupMetrics, AdData, AssetPerformance, AssetGroupMetrics } from '@/lib/google-ads'
 
 // ─── Maps ──────────────────────────────────────────────────────────────────────
@@ -27,6 +27,183 @@ const PERF_LABEL_CFG: Record<string, { dot: string; text: string; label: string 
   LOW:      { dot: 'bg-red-400',     text: 'text-red-600',     label: 'Low'      },
   LEARNING: { dot: 'bg-amber-400',   text: 'text-amber-600',   label: 'Learning' },
   UNRATED:  { dot: 'bg-navy/20',     text: 'text-navy/40',     label: 'Unrated'  },
+}
+
+// ─── Asset chip background / border / text by performance label ───────────────
+const ASSET_CHIP: Record<string, string> = {
+  BEST:     'bg-emerald-50 border-emerald-200 text-emerald-800',
+  GOOD:     'bg-cyan/10 border-cyan/30 text-cyan-800',
+  LOW:      'bg-red-50 border-red-200 text-red-700',
+  LEARNING: 'bg-amber-50 border-amber-200 text-amber-700',
+  UNRATED:  'bg-cloud/60 border-cloud text-navy/50',
+}
+
+// ─── Ad strength sort order: worst (0) → best (5) ────────────────────────────
+const STRENGTH_ORDER: Record<string, number> = {
+  POOR: 0, AVERAGE: 1, GOOD: 2, EXCELLENT: 3, PENDING: 4, UNKNOWN: 5,
+}
+
+// ─── Derive one actionable hint from ad data ──────────────────────────────────
+function getActionHint(ad: AdData): { icon: string; msg: string; level: 'error' | 'warn' | 'info' } | null {
+  if ((AD_TYPE_MAP[ad.type] ?? ad.type) !== 'RSA') return null
+  const s = ad.ad_strength
+  const h = ad.headlines.length
+  const d = ad.descriptions.length
+  if (s === 'POOR') {
+    if (h < 5) return { icon: '⚠️', msg: `Add ${5 - h} more headline${5 - h === 1 ? '' : 's'} — Poor strength needs at least 5`, level: 'error' }
+    if (d < 2) return { icon: '⚠️', msg: 'Add at least 2 descriptions to reach Good strength', level: 'error' }
+    return { icon: '⚠️', msg: 'Ad Strength is Poor — add unique, keyword-rich headlines and descriptions', level: 'error' }
+  }
+  if (s === 'AVERAGE') {
+    if (h < 8) return { icon: '💡', msg: `Add ${8 - h} more headline${8 - h === 1 ? '' : 's'} to improve ad strength`, level: 'warn' }
+    if (d < 3) return { icon: '💡', msg: 'Add a 3rd description — it gives Google more rotation options', level: 'warn' }
+    return { icon: '💡', msg: 'Diversify headlines — avoid repeating similar phrases to improve strength', level: 'warn' }
+  }
+  if (h < 10) return { icon: '✨', msg: `${15 - h} headline slot${15 - h === 1 ? '' : 's'} unused — more options give Google better combinations`, level: 'info' }
+  return null
+}
+
+// ─── Asset coverage progress bar (Headlines X/15, Descriptions X/4) ──────────
+function AssetCoverageMeter({ label, current, max, warn }: {
+  label: string; current: number; max: number; warn: number
+}) {
+  const pct = Math.min((current / max) * 100, 100)
+  const low = current < warn
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-[10px] font-heading font-bold uppercase tracking-wider text-teal">{label}</p>
+        <p className={`text-[10px] tabular-nums font-bold ${low ? 'text-amber-600' : 'text-navy/40'}`}>{current}/{max}</p>
+      </div>
+      <div className="h-1.5 bg-cloud rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all duration-500 ${low ? 'bg-amber-400' : 'bg-cyan'}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+// ─── Ad-group column definitions ──────────────────────────────────────────────
+type AgMetricKey = 'impressions' | 'clicks' | 'ctr' | 'cost' | 'conversions' | 'conversion_rate' | 'avg_cpc' | 'cost_per_conversion'
+
+interface AgColDef {
+  key:       AgMetricKey
+  label:     string
+  defaultOn: boolean
+  sort:      AgSortCol | null  // null = not independently sortable (derived)
+  format:    (g: AdGroupMetrics, currency: string) => string
+  total?:    (groups: AdGroupMetrics[], currency: string) => string
+}
+
+const ALL_AG_COLS: AgColDef[] = [
+  { key: 'impressions',         label: 'Impressions', defaultOn: true,  sort: 'impressions',
+    format: g => g.impressions.toLocaleString(),
+    total: gs => gs.reduce((s, g) => s + g.impressions, 0).toLocaleString() },
+  { key: 'clicks',              label: 'Clicks',      defaultOn: true,  sort: 'clicks',
+    format: g => g.clicks.toLocaleString(),
+    total: gs => gs.reduce((s, g) => s + g.clicks, 0).toLocaleString() },
+  { key: 'ctr',                 label: 'CTR',         defaultOn: true,  sort: 'ctr',
+    format: g => `${g.ctr.toFixed(2)}%`,
+    total: gs => {
+      const imp = gs.reduce((s, g) => s + g.impressions, 0)
+      const clk = gs.reduce((s, g) => s + g.clicks, 0)
+      return imp > 0 ? `${((clk / imp) * 100).toFixed(2)}%` : '0.00%'
+    }},
+  { key: 'cost',                label: 'Cost',        defaultOn: true,  sort: 'cost',
+    format: (g, cur) => `${cur} ${g.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    total: (gs, cur) => `${cur} ${gs.reduce((s, g) => s + g.cost, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}` },
+  { key: 'avg_cpc',             label: 'Avg. CPC',   defaultOn: false, sort: null,
+    format: (g, cur) => g.clicks > 0 ? `${cur} ${(g.cost / g.clicks).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—',
+    total: (gs, cur) => {
+      const cost = gs.reduce((s, g) => s + g.cost, 0)
+      const clk  = gs.reduce((s, g) => s + g.clicks, 0)
+      return clk > 0 ? `${cur} ${(cost / clk).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'
+    }},
+  { key: 'conversions',         label: 'Conversions', defaultOn: true,  sort: 'conversions',
+    format: g => g.conversions.toLocaleString(undefined, { maximumFractionDigits: 1 }),
+    total: gs => gs.reduce((s, g) => s + g.conversions, 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) },
+  { key: 'conversion_rate',     label: 'Conv. Rate',  defaultOn: true,  sort: 'conversion_rate',
+    format: g => `${g.conversion_rate.toFixed(2)}%`,
+    total: gs => {
+      const clk  = gs.reduce((s, g) => s + g.clicks, 0)
+      const conv = gs.reduce((s, g) => s + g.conversions, 0)
+      return clk > 0 ? `${((conv / clk) * 100).toFixed(2)}%` : '0.00%'
+    }},
+  { key: 'cost_per_conversion', label: 'Cost/Conv',   defaultOn: false, sort: null,
+    format: (g, cur) => g.conversions > 0 ? `${cur} ${(g.cost / g.conversions).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—',
+    total: (gs, cur) => {
+      const cost = gs.reduce((s, g) => s + g.cost, 0)
+      const conv = gs.reduce((s, g) => s + g.conversions, 0)
+      return conv > 0 ? `${cur} ${(cost / conv).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'
+    }},
+]
+
+const DEFAULT_AG_COL_KEYS = new Set(ALL_AG_COLS.filter(c => c.defaultOn).map(c => c.key))
+const AG_LS_KEY = 'ws_adgroup_cols_v1'
+
+function loadAgColKeys(): Set<string> {
+  if (typeof window === 'undefined') return DEFAULT_AG_COL_KEYS
+  try {
+    const raw = localStorage.getItem(AG_LS_KEY)
+    return raw ? new Set(JSON.parse(raw) as string[]) : DEFAULT_AG_COL_KEYS
+  } catch { return DEFAULT_AG_COL_KEYS }
+}
+
+function saveAgColKeys(keys: Set<string>) {
+  try { localStorage.setItem(AG_LS_KEY, JSON.stringify(Array.from(keys))) } catch {}
+}
+
+// ─── Ad-group column picker ────────────────────────────────────────────────────
+function AgColumnPicker({ enabledKeys, onChange }: { enabledKeys: Set<string>; onChange: (k: Set<string>) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function outside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', outside)
+    return () => document.removeEventListener('mousedown', outside)
+  }, [open])
+
+  function toggle(key: string, on: boolean) {
+    const next = new Set(enabledKeys)
+    on ? next.add(key) : next.delete(key)
+    onChange(next)
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`text-[11px] font-bold border px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${open ? 'bg-cyan text-navy border-cyan' : 'text-navy/60 hover:text-navy border-cloud hover:border-cyan/40'}`}
+        title="Show / hide columns"
+      >
+        ⊞ Columns <span className="text-[10px] opacity-70">({enabledKeys.size})</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1.5 z-50 bg-white border border-cloud rounded-2xl shadow-2xl p-3 w-52">
+          <p className="text-[10px] font-heading font-bold uppercase tracking-wider text-teal mb-2 px-1">Show / Hide Columns</p>
+          <div className="space-y-0.5">
+            {ALL_AG_COLS.map(col => (
+              <label key={col.key} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-mist cursor-pointer select-none">
+                <input
+                  type="checkbox" checked={enabledKeys.has(col.key)}
+                  onChange={e => toggle(col.key, e.target.checked)}
+                  className="accent-cyan w-3.5 h-3.5 flex-shrink-0"
+                />
+                <span className="text-xs text-navy">{col.label}</span>
+              </label>
+            ))}
+          </div>
+          <div className="border-t border-cloud mt-2 pt-2 flex items-center gap-3 px-1">
+            <button onClick={() => onChange(new Set(DEFAULT_AG_COL_KEYS))} className="text-[10px] text-navy/40 hover:text-navy transition-colors">Reset defaults</button>
+            <button onClick={() => onChange(new Set(ALL_AG_COLS.map(c => c.key)))} className="text-[10px] text-navy/40 hover:text-navy transition-colors">Show all</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ─── Shared helpers ────────────────────────────────────────────────────────────
@@ -81,11 +258,22 @@ function PanelSpinner({ label }: { label: string }) {
   )
 }
 
-// ─── Ad Group row with its own pause/resume state ─────────────────────────────
-function AdGroupRow({ g, currency, clientId }: { g: AdGroupMetrics; currency: string; clientId: string }) {
-  const [status,  setStatus]  = useState(g.status)
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState('')
+// ─── Ad Group row with inline ads expansion ────────────────────────────────────
+function AdGroupRow({ g, currency, clientId, campaignId, startDate, endDate, visibleCols }: {
+  g: AdGroupMetrics; currency: string; clientId: string;
+  campaignId: string; startDate: string; endDate: string
+  visibleCols: AgColDef[]
+}) {
+  const [status,     setStatus]     = useState(g.status)
+  const [loading,    setLoading]    = useState(false)
+  const [error,      setError]      = useState('')
+
+  // Inline ads panel state
+  const [adsOpen,    setAdsOpen]    = useState(false)
+  const [ads,        setAds]        = useState<AdData[]>([])
+  const [adsLoading, setAdsLoading] = useState(false)
+  const [adsError,   setAdsError]   = useState('')
+  const [adsFetched, setAdsFetched] = useState(false)
 
   async function toggle() {
     const next = isEnabled(status) ? 'PAUSED' : 'ENABLED'
@@ -102,35 +290,78 @@ function AdGroupRow({ g, currency, clientId }: { g: AdGroupMetrics; currency: st
     finally { setLoading(false) }
   }
 
+  async function toggleAds() {
+    const next = !adsOpen
+    setAdsOpen(next)
+    if (next && !adsFetched && !adsLoading) {
+      setAdsLoading(true); setAdsError('')
+      try {
+        const res = await fetch(`/api/ads?client_account_id=${clientId}&campaign_id=${campaignId}&ad_group_id=${g.id}&start_date=${startDate}&end_date=${endDate}`)
+        const d = await res.json()
+        if (!res.ok) throw new Error(d.error)
+        setAds(d.ads ?? [])
+        setAdsFetched(true)
+      } catch (e: any) { setAdsError(e.message) }
+      finally { setAdsLoading(false) }
+    }
+  }
+
   return (
-    <tr className="hover:bg-mist/50 transition-colors">
-      <td className="px-4 py-3 font-medium text-navy max-w-[220px]">
-        <p className="truncate text-sm" title={g.name}>{g.name}</p>
-      </td>
-      <td className="px-4 py-3"><StatusBadge status={status} /></td>
-      <td className="px-4 py-3 text-right tabular-nums text-sm text-navy/80">{g.impressions.toLocaleString()}</td>
-      <td className="px-4 py-3 text-right tabular-nums text-sm text-navy/80">{g.clicks.toLocaleString()}</td>
-      <td className="px-4 py-3 text-right tabular-nums text-sm text-navy/80">{g.ctr.toFixed(2)}%</td>
-      <td className="px-4 py-3 text-right tabular-nums text-sm text-navy/80">
-        {currency} {g.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-      </td>
-      <td className="px-4 py-3 text-right tabular-nums text-sm text-navy/80">{g.conversions.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
-      <td className="px-4 py-3 text-right tabular-nums text-sm text-navy/80">{g.conversion_rate.toFixed(2)}%</td>
-      <td className="px-4 py-3 text-right">
-        <ToggleBtn active={isEnabled(status)} loading={loading} error={error} onToggle={toggle} />
-      </td>
-    </tr>
+    <>
+      <tr className={`transition-colors ${adsOpen ? 'bg-cyan/5' : 'hover:bg-mist/50'}`}>
+        <td className="px-4 py-3 font-medium text-navy max-w-[220px]">
+          <p className="truncate text-sm" title={g.name}>{g.name}</p>
+        </td>
+        <td className="px-4 py-3"><StatusBadge status={status} /></td>
+        {visibleCols.map(col => (
+          <td key={col.key} className="px-4 py-3 text-right tabular-nums text-sm text-navy/80 whitespace-nowrap">
+            {col.format(g, currency)}
+          </td>
+        ))}
+        <td className="px-4 py-3 text-right">
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={toggleAds}
+              className={`text-[11px] font-bold border px-2.5 py-1.5 rounded-lg transition-all whitespace-nowrap ${adsOpen ? 'bg-cyan/10 border-cyan text-cyan' : 'text-cyan hover:text-cyan/70 border-cyan/30 hover:border-cyan'}`}
+            >
+              {adsOpen ? '▲ Ads' : 'Ads ▼'}
+            </button>
+            <ToggleBtn active={isEnabled(status)} loading={loading} error={error} onToggle={toggle} />
+          </div>
+        </td>
+      </tr>
+      {adsOpen && (
+        <tr>
+          <td colSpan={visibleCols.length + 3} className="p-0">
+            <div className="bg-mist/40 border-b border-cloud px-5 py-4">
+              <p className="text-[10px] font-heading font-bold uppercase tracking-wider text-teal mb-3">
+                Ads in <span className="text-navy normal-case font-medium">{g.name}</span>
+              </p>
+              <AdsTab ads={ads} currency={currency} clientId={clientId} loading={adsLoading} error={adsError} />
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
 // ─── Ad Groups tab ─────────────────────────────────────────────────────────────
 type AgSortCol = 'name' | 'impressions' | 'clicks' | 'ctr' | 'cost' | 'conversions' | 'conversion_rate'
 
-function AdGroupsTab({ adGroups, currency, clientId, loading, error }: {
-  adGroups: AdGroupMetrics[]; currency: string; clientId: string; loading: boolean; error: string
+function AdGroupsTab({ adGroups, currency, clientId, campaignId, startDate, endDate, loading, error }: {
+  adGroups: AdGroupMetrics[]; currency: string; clientId: string;
+  campaignId: string; startDate: string; endDate: string
+  loading: boolean; error: string
 }) {
   const [sortCol, setSortCol] = useState<AgSortCol>('cost')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [colKeys, setColKeys] = useState<Set<string>>(DEFAULT_AG_COL_KEYS)
+
+  // Load saved preference on mount
+  useEffect(() => { setColKeys(loadAgColKeys()) }, [])
+
+  function handleColChange(next: Set<string>) { setColKeys(next); saveAgColKeys(next) }
 
   if (loading) return <PanelSpinner label="Loading ad groups…" />
   if (error)   return <PanelError msg={error} />
@@ -141,16 +372,13 @@ function AdGroupsTab({ adGroups, currency, clientId, loading, error }: {
     else { setSortCol(col); setSortDir('desc') }
   }
 
+  const visibleCols = ALL_AG_COLS.filter(c => colKeys.has(c.key))
+
   const sorted = [...adGroups].sort((a, b) => {
     const av = a[sortCol], bv = b[sortCol]
     if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv as string) : (bv as string).localeCompare(av)
     return sortDir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number)
   })
-
-  const totals = adGroups.reduce(
-    (acc, g) => ({ impressions: acc.impressions + g.impressions, clicks: acc.clicks + g.clicks, cost: acc.cost + g.cost, conversions: acc.conversions + g.conversions }),
-    { impressions: 0, clicks: 0, cost: 0, conversions: 0 }
-  )
 
   function SortTh({ col, label, align = 'right' }: { col: AgSortCol; label: string; align?: 'left' | 'right' }) {
     const active = sortCol === col
@@ -169,37 +397,52 @@ function AdGroupsTab({ adGroups, currency, clientId, loading, error }: {
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm min-w-[760px]">
-        <thead>
-          <tr className="border-b border-cloud">
-            <SortTh col="name"            label="Ad Group"   align="left" />
-            <th className="px-4 py-3 text-left text-[10px] font-heading font-bold uppercase tracking-wider text-teal">Status</th>
-            <SortTh col="impressions"     label="Impressions" />
-            <SortTh col="clicks"          label="Clicks" />
-            <SortTh col="ctr"             label="CTR" />
-            <SortTh col="cost"            label="Cost" />
-            <SortTh col="conversions"     label="Conversions" />
-            <SortTh col="conversion_rate" label="Conv. Rate" />
-            <th />
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-cloud">
-          {sorted.map(g => <AdGroupRow key={g.id} g={g} currency={currency} clientId={clientId} />)}
-        </tbody>
-        <tfoot>
-          <tr className="border-t-2 border-cloud/70 bg-mist">
-            <td className="px-4 py-3 text-[11px] font-heading font-bold text-navy">Total · {adGroups.length} groups</td>
-            <td /><td className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums">{totals.impressions.toLocaleString()}</td>
-            <td className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums">{totals.clicks.toLocaleString()}</td>
-            <td className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums">{totals.impressions > 0 ? ((totals.clicks / totals.impressions) * 100).toFixed(2) : '0.00'}%</td>
-            <td className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums">{currency} {totals.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-            <td className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums">{totals.conversions.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
-            <td className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums">{totals.clicks > 0 ? ((totals.conversions / totals.clicks) * 100).toFixed(2) : '0.00'}%</td>
-            <td />
-          </tr>
-        </tfoot>
-      </table>
+    <div>
+      {/* Toolbar */}
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[11px] text-teal">{adGroups.length} ad group{adGroups.length !== 1 ? 's' : ''}</p>
+        <AgColumnPicker enabledKeys={colKeys} onChange={handleColChange} />
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[560px]">
+          <thead>
+            <tr className="border-b border-cloud">
+              <SortTh col="name" label="Ad Group" align="left" />
+              <th className="px-4 py-3 text-left text-[10px] font-heading font-bold uppercase tracking-wider text-teal">Status</th>
+              {visibleCols.map(col => (
+                col.sort ? (
+                  <SortTh key={col.key} col={col.sort as AgSortCol} label={col.label} />
+                ) : (
+                  <th key={col.key} className="px-4 py-3 text-right text-[10px] font-heading font-bold uppercase tracking-wider text-teal whitespace-nowrap">
+                    {col.label}
+                  </th>
+                )
+              ))}
+              <th />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-cloud">
+            {sorted.map(g => (
+              <AdGroupRow key={g.id} g={g} currency={currency} clientId={clientId} campaignId={campaignId} startDate={startDate} endDate={endDate} visibleCols={visibleCols} />
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-cloud/70 bg-mist">
+              <td className="px-4 py-3 text-[11px] font-heading font-bold text-navy">
+                Total · {adGroups.length} group{adGroups.length !== 1 ? 's' : ''}
+              </td>
+              <td />
+              {visibleCols.map(col => (
+                <td key={col.key} className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums whitespace-nowrap">
+                  {col.total ? col.total(adGroups, currency) : ''}
+                </td>
+              ))}
+              <td />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   )
 }
@@ -467,7 +710,9 @@ function AdEditor({ ad, clientId, assets, onSaved, onCancel }: {
 }
 
 // ─── Single ad card ────────────────────────────────────────────────────────────
-function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: string; currency: string }) {
+function AdCard({ ad: initialAd, clientId, currency, autoLoad = false }: {
+  ad: AdData; clientId: string; currency: string; autoLoad?: boolean
+}) {
   const [ad,       setAd]       = useState(initialAd)
   const [status,   setStatus]   = useState(initialAd.status)
   const [editing,  setEditing]  = useState(false)
@@ -480,6 +725,20 @@ function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: s
   const [assetsLoad,  setAssetsLoad]  = useState(false)
   const [assetsErr,   setAssetsErr]   = useState('')
   const [showInsights,setShowInsights]= useState(false)
+
+  const typeLabel = AD_TYPE_MAP[ad.type] ?? ad.type
+  const isRSA     = typeLabel === 'RSA'
+
+  // Auto-load asset performance for RSA ads when requested by the parent tab
+  useEffect(() => {
+    if (!autoLoad || !isRSA || assetsLoaded || assetsLoad) return
+    setAssetsLoad(true); setAssetsErr('')
+    fetch(`/api/ad-assets?client_account_id=${clientId}&ad_group_id=${ad.ad_group_id}&ad_id=${ad.id}`)
+      .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error); setAssets(d.assets ?? []); setAssetsLoaded(true) })
+      .catch(e => setAssetsErr(e.message))
+      .finally(() => setAssetsLoad(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoLoad, isRSA])
 
   async function toggleStatus() {
     const next = isEnabled(status) ? 'PAUSED' : 'ENABLED'
@@ -523,9 +782,6 @@ function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: s
     if (!assetsLoaded) fetchAssets()
   }
 
-  const typeLabel = AD_TYPE_MAP[ad.type] ?? ad.type
-  const isRSA     = typeLabel === 'RSA'
-
   // Build asset lookup map: text → label
   const assetMap = new Map(assets.map(a => [a.text, a.label]))
 
@@ -534,6 +790,9 @@ function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: s
     return items.map(text => ({ text, label: assetMap.get(text) ?? 'UNRATED' }))
   }
 
+  const hint         = !editing ? getActionHint(ad) : null
+  const noImpressions = isEnabled(status) && ad.impressions === 0
+
   return (
     <div className="border border-cloud rounded-2xl overflow-hidden">
       {/* Header */}
@@ -541,6 +800,11 @@ function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: s
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           <span className="text-[11px] font-bold bg-navy/10 text-navy px-2.5 py-1 rounded-full">{typeLabel}</span>
           <AdStrengthBadge strength={ad.ad_strength} />
+          {noImpressions && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-red-100 text-red-700">
+              ⚠️ No impressions
+            </span>
+          )}
           <p className="text-xs text-teal truncate" title={ad.ad_group_name}>Ad Group: {ad.ad_group_name}</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -548,6 +812,14 @@ function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: s
           <ToggleBtn active={isEnabled(status)} loading={toggling} error={toggleErr} onToggle={toggleStatus} />
         </div>
       </div>
+
+      {/* Action hint banner */}
+      {hint && (
+        <div className={`flex items-center gap-2 px-5 py-2.5 border-b border-cloud text-xs font-medium ${hint.level === 'error' ? 'bg-red-50 text-red-700' : hint.level === 'warn' ? 'bg-amber-50 text-amber-700' : 'bg-cyan/5 text-teal'}`}>
+          <span className="flex-shrink-0">{hint.icon}</span>
+          <span>{hint.msg}</span>
+        </div>
+      )}
 
       {/* Body */}
       <div className="px-5 py-4 border-b border-cloud space-y-4">
@@ -566,6 +838,14 @@ function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: s
               <p className="text-[11px] text-emerald-700 truncate" title={ad.final_url}>🌐 {ad.final_url}</p>
             )}
 
+            {/* Asset coverage meters (RSA only) */}
+            {isRSA && (
+              <div className="flex gap-4">
+                <AssetCoverageMeter label="Headlines"    current={ad.headlines.length}    max={15} warn={8} />
+                <AssetCoverageMeter label="Descriptions" current={ad.descriptions.length} max={4}  warn={3} />
+              </div>
+            )}
+
             {/* Headlines */}
             {ad.headlines.length > 0 && (
               <div>
@@ -574,18 +854,16 @@ function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: s
                   {isRSA && <span className="ml-1 text-navy/30 font-normal normal-case tracking-normal">({ad.headlines.length})</span>}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {labeledItems(ad.headlines).map(({ text, label }, i) => (
-                    <div key={i} className="group relative">
-                      <span className="text-xs bg-cyan/10 text-navy px-2.5 py-1 rounded-lg border border-cyan/20 inline-block">
+                  {labeledItems(ad.headlines).map(({ text, label }, i) => {
+                    const chipCls = assetsLoaded
+                      ? (ASSET_CHIP[label] ?? ASSET_CHIP.UNRATED)
+                      : 'bg-cyan/10 border-cyan/20 text-navy'
+                    return (
+                      <span key={i} className={`text-xs px-2.5 py-1 rounded-lg border inline-block transition-colors ${chipCls}`}>
                         {text}
                       </span>
-                      {assetsLoaded && (
-                        <span className="absolute -top-5 left-0 whitespace-nowrap">
-                          <PerfChip label={label} />
-                        </span>
-                      )}
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -595,12 +873,15 @@ function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: s
               <div>
                 <p className="text-[10px] font-heading font-bold uppercase tracking-wider text-teal mb-2">Descriptions</p>
                 <div className="space-y-2">
-                  {labeledItems(ad.descriptions).map(({ text, label }, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <p className="text-xs text-navy/70 leading-relaxed flex-1">{text}</p>
-                      {assetsLoaded && <PerfChip label={label} />}
-                    </div>
-                  ))}
+                  {labeledItems(ad.descriptions).map(({ text, label }, i) => {
+                    const chipCls = assetsLoaded ? (ASSET_CHIP[label] ?? ASSET_CHIP.UNRATED) : ''
+                    return (
+                      <div key={i} className={`flex items-start gap-2 px-3 py-2 rounded-lg border transition-colors ${assetsLoaded ? chipCls : 'border-transparent'}`}>
+                        <p className="text-xs leading-relaxed flex-1">{text}</p>
+                        {assetsLoaded && <div className="flex-shrink-0"><PerfChip label={label} /></div>}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -633,27 +914,37 @@ function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: s
                 {assets.length === 0 ? (
                   <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
                     <span className="text-sm flex-shrink-0">ℹ️</span>
-                    <p className="text-xs text-amber-800 leading-relaxed">No asset data returned. This can happen for non-RSA ad types or very new ads.</p>
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      No asset data returned. This usually means the ad hasn't served enough impressions yet, or the ad type doesn't support asset-level reporting.
+                    </p>
                   </div>
                 ) : (() => {
-                  const allUnrated = assets.every(a => a.label === 'UNRATED' || a.label === '0')
+                  // After backend normalisation, labels are only: BEST | GOOD | LOW | LEARNING | UNRATED
                   const LABEL_ORDER = { BEST: 0, GOOD: 1, LOW: 2, LEARNING: 3, UNRATED: 4 }
+                  const hasPerformance = assets.some(a => a.label === 'BEST' || a.label === 'GOOD' || a.label === 'LOW')
+                  const allLearning    = !hasPerformance && assets.some(a => a.label === 'LEARNING')
+                  const allUnrated     = !hasPerformance && !allLearning
                   return (
                     <>
                       {allUnrated && (
                         <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 mb-4">
                           <span className="text-sm flex-shrink-0">ℹ️</span>
                           <p className="text-xs text-amber-800 leading-relaxed">
-                            <strong>All assets are currently Unrated</strong> — this is normal. Google requires roughly <strong>5,000 impressions per asset</strong> before it assigns BEST / GOOD / LOW labels. Labels will appear automatically as your campaign collects more data.
+                            <strong>All assets are Unrated</strong> — Google needs roughly <strong>5,000 impressions per asset</strong> before assigning BEST / GOOD / LOW labels. Check back once the campaign has more traffic.
+                          </p>
+                        </div>
+                      )}
+                      {allLearning && (
+                        <div className="flex items-start gap-2 bg-cyan/5 border border-cyan/20 rounded-xl px-3 py-2.5 mb-4">
+                          <span className="text-sm flex-shrink-0">🔄</span>
+                          <p className="text-xs text-teal leading-relaxed">
+                            <strong>Assets are in the Learning phase</strong> — Google is actively collecting impression data. Performance labels (BEST / GOOD / LOW) will appear once sufficient data is gathered.
                           </p>
                         </div>
                       )}
                       <div className="grid sm:grid-cols-2 gap-5">
                         {(['HEADLINE', 'DESCRIPTION'] as const).map(fieldType => {
-                          const filtered = assets.filter(a =>
-                            a.field_type === fieldType ||
-                            a.field_type === (fieldType === 'HEADLINE' ? '5' : '6')
-                          )
+                          const filtered = assets.filter(a => a.field_type === fieldType)
                           if (filtered.length === 0) return null
                           const sortedAssets = [...filtered].sort((a, b) =>
                             (LABEL_ORDER[a.label as keyof typeof LABEL_ORDER] ?? 4) -
@@ -697,25 +988,111 @@ function AdCard({ ad: initialAd, clientId, currency }: { ad: AdData; clientId: s
 }
 
 // ─── Ads tab ───────────────────────────────────────────────────────────────────
+type AdSortBy = 'strength' | 'impressions' | 'clicks' | 'cost' | 'ctr'
+type AdFilter = '' | 'POOR' | 'AVERAGE' | 'GOOD' | 'EXCELLENT' | 'no_impressions'
+
 function AdsTab({ ads, currency, clientId, loading, error }: {
   ads: AdData[]; currency: string; clientId: string; loading: boolean; error: string
 }) {
+  const [sortBy,         setSortBy]         = useState<AdSortBy>('strength')
+  const [filterStrength, setFilterStrength] = useState<AdFilter>('')
+
   if (loading) return <PanelSpinner label="Loading ads…" />
   if (error)   return <PanelError msg={error} />
   if (ads.length === 0) return <div className="text-center py-16 text-teal text-sm">No ads found for this period.</div>
 
+  // Optimisation summary counts
+  const poorOrAvg     = ads.filter(a => a.ad_strength === 'POOR' || a.ad_strength === 'AVERAGE')
+  const zeroImprAds   = ads.filter(a => isEnabled(a.status) && a.impressions === 0)
+
+  // Apply filter
+  const filtered = ads.filter(a => {
+    if (!filterStrength) return true
+    if (filterStrength === 'no_impressions') return isEnabled(a.status) && a.impressions === 0
+    return a.ad_strength === filterStrength
+  })
+
+  // Apply sort
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === 'strength')    return (STRENGTH_ORDER[a.ad_strength] ?? 5) - (STRENGTH_ORDER[b.ad_strength] ?? 5)
+    if (sortBy === 'impressions') return b.impressions - a.impressions
+    if (sortBy === 'clicks')      return b.clicks - a.clicks
+    if (sortBy === 'cost')        return b.cost - a.cost
+    if (sortBy === 'ctr')         return b.ctr - a.ctr
+    return 0
+  })
+
+  const FILTERS: { value: AdFilter; label: string }[] = [
+    { value: '',               label: 'All' },
+    { value: 'POOR',           label: '🔴 Poor' },
+    { value: 'AVERAGE',        label: '🟡 Average' },
+    { value: 'GOOD',           label: '🟢 Good' },
+    { value: 'EXCELLENT',      label: '⭐ Excellent' },
+    { value: 'no_impressions', label: '⚠️ No impressions' },
+  ]
+
   return (
     <div className="space-y-4">
-      {ads.map(ad => (
-        <AdCard key={ad.id} ad={ad} clientId={clientId} currency={currency} />
+
+      {/* Optimisation summary banner */}
+      {(poorOrAvg.length > 0 || zeroImprAds.length > 0) && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-2.5">
+          <span className="text-sm flex-shrink-0 mt-0.5">🔍</span>
+          <div className="text-xs text-amber-800 space-y-0.5">
+            {poorOrAvg.length > 0 && (
+              <p><strong>{poorOrAvg.length} ad{poorOrAvg.length !== 1 ? 's' : ''}</strong> have Poor or Average strength — expand each card for specific improvement tips.</p>
+            )}
+            {zeroImprAds.length > 0 && (
+              <p><strong>{zeroImprAds.length} active ad{zeroImprAds.length !== 1 ? 's' : ''}</strong> have zero impressions — check bid strategy, targeting, or ad approval status.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Sort + filter bar */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <label className="text-[10px] font-heading font-bold uppercase tracking-wider text-teal whitespace-nowrap">Sort by</label>
+          <select
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value as AdSortBy)}
+            className="text-xs border border-cloud rounded-lg px-2.5 py-1.5 text-navy focus:outline-none focus:border-cyan bg-white"
+          >
+            <option value="strength">Ad Strength (worst first)</option>
+            <option value="impressions">Impressions</option>
+            <option value="clicks">Clicks</option>
+            <option value="cost">Cost</option>
+            <option value="ctr">CTR</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {FILTERS.map(f => (
+            <button
+              key={f.value}
+              onClick={() => setFilterStrength(f.value)}
+              className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-all whitespace-nowrap ${filterStrength === f.value ? 'bg-cyan text-navy border-cyan' : 'border-cloud text-navy/60 hover:border-cyan/40 hover:text-navy'}`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Result count when filtered */}
+      {filterStrength && (
+        <p className="text-[11px] text-teal">{sorted.length} of {ads.length} ad{ads.length !== 1 ? 's' : ''} shown</p>
+      )}
+
+      {sorted.length === 0 ? (
+        <div className="text-center py-12 text-teal text-sm">No ads match this filter.</div>
+      ) : sorted.map(ad => (
+        <AdCard key={ad.id} ad={ad} clientId={clientId} currency={currency} autoLoad />
       ))}
     </div>
   )
 }
 
 // ─── Main drill-down panel ─────────────────────────────────────────────────────
-export type DrillView = 'ad_groups' | 'ads'
-
 interface Props {
   campaignId:   string
   campaignName: string
@@ -723,17 +1100,14 @@ interface Props {
   currency:     string
   startDate:    string
   endDate:      string
-  initialView:  DrillView
   channelType:  string
   onClose:      () => void
 }
 
-export function CampaignDrillDown({ campaignId, campaignName, clientId, currency, startDate, endDate, initialView, channelType, onClose }: Props) {
+export function CampaignDrillDown({ campaignId, campaignName, clientId, currency, startDate, endDate, channelType, onClose }: Props) {
   const isPMax = channelType === 'PERFORMANCE_MAX' || channelType === '10'
 
-  const [view, setView] = useState<DrillView>(initialView)
-
-  // Ad groups (Search / Display / Shopping / etc.)
+  // Ad groups (non-PMax)
   const [adGroups,  setAdGroups]  = useState<AdGroupMetrics[]>([])
   const [agLoading, setAgLoading] = useState(false)
   const [agError,   setAgError]   = useState('')
@@ -745,77 +1119,68 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
   const [axError,      setAxError]      = useState('')
   const [axFetched,    setAxFetched]    = useState(false)
 
-  // Ads
-  const [ads,        setAds]        = useState<AdData[]>([])
-  const [adsLoading, setAdsLoading] = useState(false)
-  const [adsError,   setAdsError]   = useState('')
-  const [adsFetched, setAdsFetched] = useState(false)
-
-  // Fetch ad groups (non-PMax)
+  // Fetch ad groups on mount (non-PMax)
   useEffect(() => {
-    if (isPMax || view !== 'ad_groups' || agFetched) return
+    if (isPMax || agFetched) return
     setAgLoading(true); setAgError('')
     fetch(`/api/ad-groups?client_account_id=${clientId}&campaign_id=${campaignId}&start_date=${startDate}&end_date=${endDate}`)
       .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error); setAdGroups(d.adGroups ?? []); setAgFetched(true) })
       .catch(e => setAgError(String(e)))
       .finally(() => setAgLoading(false))
-  }, [view, agFetched, isPMax, clientId, campaignId, startDate, endDate])
+  }, [agFetched, isPMax, clientId, campaignId, startDate, endDate])
 
-  // Fetch asset groups (PMax only)
+  // Fetch asset groups on mount (PMax only)
   useEffect(() => {
-    if (!isPMax || view !== 'ad_groups' || axFetched) return
+    if (!isPMax || axFetched) return
     setAxLoading(true); setAxError('')
     fetch(`/api/asset-groups?client_account_id=${clientId}&campaign_id=${campaignId}&start_date=${startDate}&end_date=${endDate}`)
       .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error); setAssetGroups(d.assetGroups ?? []); setAxFetched(true) })
       .catch(e => setAxError(String(e)))
       .finally(() => setAxLoading(false))
-  }, [view, axFetched, isPMax, clientId, campaignId, startDate, endDate])
+  }, [axFetched, isPMax, clientId, campaignId, startDate, endDate])
 
-  // Fetch ads (non-PMax only)
+  // Escape to close
   useEffect(() => {
-    if (isPMax || view !== 'ads' || adsFetched) return
-    setAdsLoading(true); setAdsError('')
-    fetch(`/api/ads?client_account_id=${clientId}&campaign_id=${campaignId}&start_date=${startDate}&end_date=${endDate}`)
-      .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error); setAds(d.ads ?? []); setAdsFetched(true) })
-      .catch(e => setAdsError(String(e)))
-      .finally(() => setAdsLoading(false))
-  }, [view, adsFetched, isPMax, clientId, campaignId, startDate, endDate])
-
-  // Build tab list based on campaign type
-  const TABS: { key: DrillView; label: string; icon: string }[] = isPMax
-    ? [{ key: 'ad_groups', label: 'Asset Groups', icon: '🎯' }]
-    : [
-        { key: 'ad_groups', label: 'Ad Groups', icon: '👥' },
-        { key: 'ads',       label: 'Ads',        icon: '📄' },
-      ]
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
 
   return (
-    <div className="bg-white border-2 border-cyan/30 rounded-2xl overflow-hidden mt-4 animate-in fade-in duration-200">
-      <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-cloud bg-mist flex-wrap">
-        <div className="flex items-center gap-3 min-w-0">
-          <button onClick={onClose} className="flex items-center gap-1.5 text-xs text-navy/50 hover:text-navy transition-colors font-medium flex-shrink-0">
-            ← Back
-          </button>
-          <span className="text-navy/20 select-none">|</span>
+    <div>
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-cloud bg-mist">
+        <div className="flex items-center gap-2.5 min-w-0">
           <p className="font-heading font-bold text-navy text-sm truncate" title={campaignName}>{campaignName}</p>
           {isPMax && (
             <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full flex-shrink-0">⚡ PMax</span>
           )}
         </div>
-        <div className="flex gap-1 bg-white border border-cloud rounded-xl p-1">
-          {TABS.map(t => (
-            <button key={t.key} onClick={() => setView(t.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-heading font-bold transition-all ${view === t.key ? 'bg-navy text-cyan' : 'text-navy/50 hover:text-navy'}`}>
-              <span>{t.icon}</span>{t.label}
-            </button>
-          ))}
-        </div>
+        <button
+          onClick={onClose}
+          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-cloud text-navy/40 hover:text-navy text-lg transition-colors flex-shrink-0"
+          title="Close"
+        >
+          ×
+        </button>
       </div>
 
+      {/* ── Content ── */}
       <div className="p-5">
-        {view === 'ad_groups' && isPMax  && <AssetGroupsTab assetGroups={assetGroups} currency={currency} loading={axLoading} error={axError} />}
-        {view === 'ad_groups' && !isPMax && <AdGroupsTab adGroups={adGroups} currency={currency} clientId={clientId} loading={agLoading} error={agError} />}
-        {view === 'ads'       && !isPMax && <AdsTab ads={ads} currency={currency} clientId={clientId} loading={adsLoading} error={adsError} />}
+        {isPMax ? (
+          <AssetGroupsTab assetGroups={assetGroups} currency={currency} loading={axLoading} error={axError} />
+        ) : (
+          <AdGroupsTab
+            adGroups={adGroups}
+            currency={currency}
+            clientId={clientId}
+            campaignId={campaignId}
+            startDate={startDate}
+            endDate={endDate}
+            loading={agLoading}
+            error={agError}
+          />
+        )}
       </div>
     </div>
   )

@@ -289,18 +289,31 @@ export async function getClientStats(
 }
 
 export interface CampaignMetrics {
-  id:                   string
-  name:                 string
-  status:               string
-  channel_type:         string
-  daily_budget:         number   // ZAR / account currency
-  budget_resource_name: string   // e.g. customers/123/campaignBudgets/456
-  impressions:          number
-  clicks:               number
-  cost:                 number
-  conversions:          number
-  ctr:                  number
-  conversion_rate:      number
+  id:                             string
+  name:                           string
+  status:                         string
+  channel_type:                   string
+  daily_budget:                   number   // ZAR / account currency
+  budget_resource_name:           string   // e.g. customers/123/campaignBudgets/456
+  impressions:                    number
+  clicks:                         number
+  cost:                           number
+  conversions:                    number
+  ctr:                            number
+  conversion_rate:                number
+  // Derived from existing totals (no extra API call needed)
+  avg_cpc:                        number   // cost / clicks
+  cost_per_conversion:            number   // cost / conversions
+  // Extra metrics from API
+  conversions_value:              number
+  all_conversions:                number
+  search_impression_share:        number | null  // 0–100 % or null for non-Search campaigns
+  search_abs_top_is:              number | null
+  search_top_is:                  number | null
+  // Smart-bidding learning phase
+  bidding_strategy_type:          string
+  bidding_strategy_system_status: string
+  start_date:                     string   // YYYY-MM-DD campaign start date
 }
 
 export async function getClientCampaigns(
@@ -321,11 +334,19 @@ export async function getClientCampaigns(
       campaign.status,
       campaign.advertising_channel_type,
       campaign.campaign_budget,
+      campaign.bidding_strategy_type,
+      campaign.bidding_strategy_system_status,
+      campaign.start_date,
       campaign_budget.amount_micros,
       metrics.impressions,
       metrics.clicks,
       metrics.cost_micros,
-      metrics.conversions
+      metrics.conversions,
+      metrics.conversions_value,
+      metrics.all_conversions,
+      metrics.search_impression_share,
+      metrics.search_absolute_top_impression_share,
+      metrics.search_top_impression_share
     FROM campaign
     WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
       AND campaign.status != 'REMOVED'
@@ -336,6 +357,13 @@ export async function getClientCampaigns(
     name: string; status: string; channel_type: string
     budget_resource_name: string; daily_budget_micros: number
     impressions: number; clicks: number; cost: number; conversions: number
+    conversions_value: number; all_conversions: number
+    search_is_sum: number; search_is_n: number
+    search_abs_top_sum: number; search_abs_top_n: number
+    search_top_sum: number; search_top_n: number
+    bidding_strategy_type: string
+    bidding_strategy_system_status: string
+    start_date: string
   }>()
 
   for (const r of results) {
@@ -343,40 +371,76 @@ export async function getClientCampaigns(
     if (!id || id === 'undefined') continue
     const prev = byCampaign.get(id)
     if (prev) {
-      prev.impressions += r.metrics?.impressions ?? 0
-      prev.clicks      += r.metrics?.clicks      ?? 0
-      prev.cost        += (r.metrics?.cost_micros ?? 0) / 1_000_000
-      prev.conversions += r.metrics?.conversions  ?? 0
+      prev.impressions       += r.metrics?.impressions        ?? 0
+      prev.clicks            += r.metrics?.clicks             ?? 0
+      prev.cost              += (r.metrics?.cost_micros ?? 0) / 1_000_000
+      prev.conversions       += r.metrics?.conversions        ?? 0
+      prev.conversions_value += r.metrics?.conversions_value  ?? 0
+      prev.all_conversions   += r.metrics?.all_conversions    ?? 0
+      const is    = r.metrics?.search_impression_share
+      const abTop = r.metrics?.search_absolute_top_impression_share
+      const top   = r.metrics?.search_top_impression_share
+      if (is    != null && is    > 0) { prev.search_is_sum      += is;    prev.search_is_n++      }
+      if (abTop != null && abTop > 0) { prev.search_abs_top_sum += abTop; prev.search_abs_top_n++ }
+      if (top   != null && top   > 0) { prev.search_top_sum     += top;   prev.search_top_n++     }
     } else {
+      const is    = r.metrics?.search_impression_share
+      const abTop = r.metrics?.search_absolute_top_impression_share
+      const top   = r.metrics?.search_top_impression_share
       byCampaign.set(id, {
-        name:                 r.campaign?.name ?? 'Unknown',
-        status:               String(r.campaign?.status ?? 'UNKNOWN'),
-        channel_type:         String(r.campaign?.advertising_channel_type ?? 'UNKNOWN'),
-        budget_resource_name: r.campaign?.campaign_budget ?? '',
-        daily_budget_micros:  r.campaign_budget?.amount_micros ?? 0,
-        impressions:          r.metrics?.impressions ?? 0,
-        clicks:               r.metrics?.clicks      ?? 0,
-        cost:                 (r.metrics?.cost_micros ?? 0) / 1_000_000,
-        conversions:          r.metrics?.conversions  ?? 0,
+        name:                           r.campaign?.name ?? 'Unknown',
+        status:                         String(r.campaign?.status ?? 'UNKNOWN'),
+        channel_type:                   String(r.campaign?.advertising_channel_type ?? 'UNKNOWN'),
+        budget_resource_name:           r.campaign?.campaign_budget ?? '',
+        daily_budget_micros:            r.campaign_budget?.amount_micros ?? 0,
+        impressions:                    r.metrics?.impressions        ?? 0,
+        clicks:                         r.metrics?.clicks             ?? 0,
+        cost:                           (r.metrics?.cost_micros ?? 0) / 1_000_000,
+        conversions:                    r.metrics?.conversions        ?? 0,
+        conversions_value:              r.metrics?.conversions_value  ?? 0,
+        all_conversions:                r.metrics?.all_conversions    ?? 0,
+        search_is_sum:                  (is    != null && is    > 0) ? is    : 0,
+        search_is_n:                    (is    != null && is    > 0) ? 1     : 0,
+        search_abs_top_sum:             (abTop != null && abTop > 0) ? abTop : 0,
+        search_abs_top_n:               (abTop != null && abTop > 0) ? 1     : 0,
+        search_top_sum:                 (top   != null && top   > 0) ? top   : 0,
+        search_top_n:                   (top   != null && top   > 0) ? 1     : 0,
+        bidding_strategy_type:          String(r.campaign?.bidding_strategy_type          ?? ''),
+        bidding_strategy_system_status: String(r.campaign?.bidding_strategy_system_status ?? ''),
+        start_date:                     String(r.campaign?.start_date ?? ''),
       })
     }
   }
 
   return Array.from(byCampaign.entries())
-    .map(([id, c]) => ({
-      id,
-      name:                 c.name,
-      status:               c.status,
-      channel_type:         c.channel_type,
-      daily_budget:         Math.round(c.daily_budget_micros / 1_000_000 * 100) / 100,
-      budget_resource_name: c.budget_resource_name,
-      impressions:          c.impressions,
-      clicks:               c.clicks,
-      cost:                 Math.round(c.cost * 100) / 100,
-      conversions:          Math.round(c.conversions * 100) / 100,
-      ctr:                  c.impressions > 0 ? Math.round((c.clicks / c.impressions) * 10000) / 100 : 0,
-      conversion_rate:      c.clicks > 0 ? Math.round((c.conversions / c.clicks) * 10000) / 100 : 0,
-    }))
+    .map(([id, c]) => {
+      const cost        = Math.round(c.cost * 100) / 100
+      const conversions = Math.round(c.conversions * 100) / 100
+      return {
+        id,
+        name:                           c.name,
+        status:                         c.status,
+        channel_type:                   c.channel_type,
+        daily_budget:                   Math.round(c.daily_budget_micros / 1_000_000 * 100) / 100,
+        budget_resource_name:           c.budget_resource_name,
+        impressions:                    c.impressions,
+        clicks:                         c.clicks,
+        cost,
+        conversions,
+        ctr:                            c.impressions > 0 ? Math.round((c.clicks / c.impressions) * 10000) / 100 : 0,
+        conversion_rate:                c.clicks > 0 ? Math.round((conversions / c.clicks) * 10000) / 100 : 0,
+        avg_cpc:                        c.clicks > 0 ? Math.round(cost / c.clicks * 100) / 100 : 0,
+        cost_per_conversion:            conversions > 0 ? Math.round(cost / conversions * 100) / 100 : 0,
+        conversions_value:              Math.round(c.conversions_value * 100) / 100,
+        all_conversions:                Math.round(c.all_conversions * 100) / 100,
+        search_impression_share:        c.search_is_n      > 0 ? Math.round(c.search_is_sum      / c.search_is_n      * 1000) / 10 : null,
+        search_abs_top_is:              c.search_abs_top_n > 0 ? Math.round(c.search_abs_top_sum / c.search_abs_top_n * 1000) / 10 : null,
+        search_top_is:                  c.search_top_n     > 0 ? Math.round(c.search_top_sum     / c.search_top_n     * 1000) / 10 : null,
+        bidding_strategy_type:          c.bidding_strategy_type,
+        bidding_strategy_system_status: c.bidding_strategy_system_status,
+        start_date:                     c.start_date,
+      }
+    })
     .sort((a, b) => b.cost - a.cost)
 }
 
@@ -561,14 +625,19 @@ export async function getAds(
   clientAccountId: string,
   campaignId: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  adGroupId?: string
 ): Promise<AdData[]> {
   validateDate(startDate, 'start_date')
   validateDate(endDate, 'end_date')
   validateCampaignId(campaignId)
+  if (adGroupId) validateCampaignId(adGroupId)
   if (startDate > endDate) throw new Error('start_date must be before end_date')
 
   const customer = getClientCustomer(clientAccountId)
+
+  // Filter server-side by ad group when provided — avoids client-side ID comparison issues
+  const adGroupFilter = adGroupId ? `\n      AND ad_group.id = ${adGroupId}` : ''
 
   const results = await customer.query(`
     SELECT
@@ -585,7 +654,7 @@ export async function getAds(
       metrics.clicks,
       metrics.cost_micros
     FROM ad_group_ad
-    WHERE campaign.id = ${campaignId}
+    WHERE campaign.id = ${campaignId}${adGroupFilter}
       AND segments.date BETWEEN '${startDate}' AND '${endDate}'
       AND ad_group_ad.status != 'REMOVED'
     ORDER BY metrics.cost_micros DESC
@@ -737,6 +806,33 @@ export async function getAssetGroups(
 }
 
 // ─── Asset-level performance labels ───────────────────────────────────────────
+// Normalise every raw API value (string name OR numeric enum) to one of:
+// BEST | GOOD | LOW | LEARNING | UNRATED
+const PERF_LABEL_MAP: Record<string, string> = {
+  // Numeric enum values
+  '0': 'UNRATED',   // UNSPECIFIED — no data yet
+  '1': 'UNRATED',   // UNKNOWN
+  '2': 'LEARNING',  // PENDING — Google is still collecting data
+  '3': 'LEARNING',  // LEARNING
+  '4': 'GOOD',      // GOOD
+  '5': 'BEST',      // BEST
+  '6': 'LOW',       // LOW
+  // String names the API may also return
+  'UNSPECIFIED': 'UNRATED',
+  'UNKNOWN':     'UNRATED',
+  'PENDING':     'LEARNING',
+  'LEARNING':    'LEARNING',
+  'GOOD':        'GOOD',
+  'BEST':        'BEST',
+  'LOW':         'LOW',
+}
+
+// field_type normalisation: numeric → canonical string
+const FIELD_TYPE_MAP: Record<string, string> = {
+  '5': 'HEADLINE', 'HEADLINE': 'HEADLINE',
+  '6': 'DESCRIPTION', 'DESCRIPTION': 'DESCRIPTION',
+}
+
 export async function getAdAssetPerformance(
   clientAccountId: string,
   adGroupId: string,
@@ -760,11 +856,15 @@ export async function getAdAssetPerformance(
   `) as any[]
 
   return results
-    .map((r: any) => ({
-      text:       String(r.asset?.text_asset?.text ?? '').trim(),
-      field_type: String(r.ad_group_ad_asset_view?.field_type ?? '').toUpperCase(),
-      label:      String(r.ad_group_ad_asset_view?.performance_label ?? 'UNRATED').toUpperCase(),
-    }))
+    .map((r: any) => {
+      const rawLabel = String(r.ad_group_ad_asset_view?.performance_label ?? '')
+      const rawType  = String(r.ad_group_ad_asset_view?.field_type ?? '')
+      return {
+        text:       String(r.asset?.text_asset?.text ?? '').trim(),
+        field_type: FIELD_TYPE_MAP[rawType] ?? rawType.toUpperCase(),
+        label:      PERF_LABEL_MAP[rawLabel] ?? PERF_LABEL_MAP[rawLabel.toUpperCase()] ?? 'UNRATED',
+      }
+    })
     .filter(a => a.text)
 }
 
