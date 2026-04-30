@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
     const campaigns = await getClientCampaigns(clientId, startDate, endDate)
     return NextResponse.json({ campaigns })
   } catch (err: any) {
+    console.error('[campaign-stats] Google Ads API error:', err?.message ?? err)
     return NextResponse.json({ error: err.message ?? 'Failed to load campaigns' }, { status: 500 })
   }
 }

@@ -327,10 +327,12 @@ export async function getClientCampaigns(
 
   const customer = getClientCustomer(clientAccountId)
 
-  // Impression share metrics are INCOMPATIBLE with segments.date in GAQL.
-  // Run two queries in parallel: one date-segmented for performance metrics,
-  // one unsegmented for IS metrics, then merge by campaign ID.
-  const [results, isResults] = await Promise.all([
+  // Three parallel queries — some fields are INCOMPATIBLE with segments.date in GAQL:
+  //   • impression share metrics → separate unsegmented IS query
+  //   • bidding_strategy_type / bidding_strategy_system_status / start_date
+  //     → separate unsegmented attrs query (system-status is a current-state
+  //       snapshot; it must NOT appear in a date-segmented context)
+  const [results, isResults, attrsResults] = await Promise.all([
     customer.query(`
       SELECT
         campaign.id,
@@ -338,9 +340,6 @@ export async function getClientCampaigns(
         campaign.status,
         campaign.advertising_channel_type,
         campaign.campaign_budget,
-        campaign.bidding_strategy_type,
-        campaign.bidding_strategy_system_status,
-        campaign.start_date,
         campaign_budget.amount_micros,
         metrics.impressions,
         metrics.clicks,
@@ -362,9 +361,18 @@ export async function getClientCampaigns(
       FROM campaign
       WHERE campaign.status != 'REMOVED'
     `).catch(() => [] as any[]) as Promise<any[]>,
+    customer.query(`
+      SELECT
+        campaign.id,
+        campaign.bidding_strategy_type,
+        campaign.bidding_strategy_system_status,
+        campaign.start_date
+      FROM campaign
+      WHERE campaign.status != 'REMOVED'
+    `).catch(() => [] as any[]) as Promise<any[]>,
   ])
 
-  // Build impression-share lookup: campaign ID → IS values (already 0–100%)
+  // Impression-share lookup: campaign ID → IS values (0–100 %)
   const isMap = new Map<string, { is: number | null; abTop: number | null; top: number | null }>()
   for (const r of isResults) {
     const id = String(r.campaign?.id ?? '')
@@ -379,14 +387,27 @@ export async function getClientCampaigns(
     })
   }
 
+  // Campaign-attributes lookup: campaign ID → bidding strategy + start date
+  const attrsMap = new Map<string, {
+    bidding_strategy_type:          string
+    bidding_strategy_system_status: string
+    start_date:                     string
+  }>()
+  for (const r of attrsResults) {
+    const id = String(r.campaign?.id ?? '')
+    if (!id || id === 'undefined') continue
+    attrsMap.set(id, {
+      bidding_strategy_type:          String(r.campaign?.bidding_strategy_type          ?? ''),
+      bidding_strategy_system_status: String(r.campaign?.bidding_strategy_system_status ?? ''),
+      start_date:                     String(r.campaign?.start_date                     ?? ''),
+    })
+  }
+
   const byCampaign = new Map<string, {
     name: string; status: string; channel_type: string
     budget_resource_name: string; daily_budget_micros: number
     impressions: number; clicks: number; cost: number; conversions: number
     conversions_value: number; all_conversions: number
-    bidding_strategy_type: string
-    bidding_strategy_system_status: string
-    start_date: string
   }>()
 
   for (const r of results) {
@@ -402,20 +423,17 @@ export async function getClientCampaigns(
       prev.all_conversions   += r.metrics?.all_conversions    ?? 0
     } else {
       byCampaign.set(id, {
-        name:                           r.campaign?.name ?? 'Unknown',
-        status:                         String(r.campaign?.status ?? 'UNKNOWN'),
-        channel_type:                   String(r.campaign?.advertising_channel_type ?? 'UNKNOWN'),
-        budget_resource_name:           r.campaign?.campaign_budget ?? '',
-        daily_budget_micros:            r.campaign_budget?.amount_micros ?? 0,
-        impressions:                    r.metrics?.impressions        ?? 0,
-        clicks:                         r.metrics?.clicks             ?? 0,
-        cost:                           (r.metrics?.cost_micros ?? 0) / 1_000_000,
-        conversions:                    r.metrics?.conversions        ?? 0,
-        conversions_value:              r.metrics?.conversions_value  ?? 0,
-        all_conversions:                r.metrics?.all_conversions    ?? 0,
-        bidding_strategy_type:          String(r.campaign?.bidding_strategy_type          ?? ''),
-        bidding_strategy_system_status: String(r.campaign?.bidding_strategy_system_status ?? ''),
-        start_date:                     String(r.campaign?.start_date ?? ''),
+        name:                 r.campaign?.name ?? 'Unknown',
+        status:               String(r.campaign?.status ?? 'UNKNOWN'),
+        channel_type:         String(r.campaign?.advertising_channel_type ?? 'UNKNOWN'),
+        budget_resource_name: r.campaign?.campaign_budget ?? '',
+        daily_budget_micros:  r.campaign_budget?.amount_micros ?? 0,
+        impressions:          r.metrics?.impressions        ?? 0,
+        clicks:               r.metrics?.clicks             ?? 0,
+        cost:                 (r.metrics?.cost_micros ?? 0) / 1_000_000,
+        conversions:          r.metrics?.conversions        ?? 0,
+        conversions_value:    r.metrics?.conversions_value  ?? 0,
+        all_conversions:      r.metrics?.all_conversions    ?? 0,
       })
     }
   }
@@ -425,6 +443,7 @@ export async function getClientCampaigns(
       const cost        = Math.round(c.cost * 100) / 100
       const conversions = Math.round(c.conversions * 100) / 100
       const is          = isMap.get(id)
+      const attrs       = attrsMap.get(id)
       return {
         id,
         name:                           c.name,
@@ -445,9 +464,9 @@ export async function getClientCampaigns(
         search_impression_share:        is?.is    ?? null,
         search_abs_top_is:              is?.abTop ?? null,
         search_top_is:                  is?.top   ?? null,
-        bidding_strategy_type:          c.bidding_strategy_type,
-        bidding_strategy_system_status: c.bidding_strategy_system_status,
-        start_date:                     c.start_date,
+        bidding_strategy_type:          attrs?.bidding_strategy_type          ?? '',
+        bidding_strategy_system_status: attrs?.bidding_strategy_system_status ?? '',
+        start_date:                     attrs?.start_date                     ?? '',
       }
     })
     .sort((a, b) => b.cost - a.cost)
