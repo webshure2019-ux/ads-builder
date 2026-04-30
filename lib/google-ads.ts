@@ -327,40 +327,63 @@ export async function getClientCampaigns(
 
   const customer = getClientCustomer(clientAccountId)
 
-  const results = await customer.query(`
-    SELECT
-      campaign.id,
-      campaign.name,
-      campaign.status,
-      campaign.advertising_channel_type,
-      campaign.campaign_budget,
-      campaign.bidding_strategy_type,
-      campaign.bidding_strategy_system_status,
-      campaign.start_date,
-      campaign_budget.amount_micros,
-      metrics.impressions,
-      metrics.clicks,
-      metrics.cost_micros,
-      metrics.conversions,
-      metrics.conversions_value,
-      metrics.all_conversions,
-      metrics.search_impression_share,
-      metrics.search_absolute_top_impression_share,
-      metrics.search_top_impression_share
-    FROM campaign
-    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
-      AND campaign.status != 'REMOVED'
-    ORDER BY metrics.cost_micros DESC
-  `) as any[]
+  // Impression share metrics are INCOMPATIBLE with segments.date in GAQL.
+  // Run two queries in parallel: one date-segmented for performance metrics,
+  // one unsegmented for IS metrics, then merge by campaign ID.
+  const [results, isResults] = await Promise.all([
+    customer.query(`
+      SELECT
+        campaign.id,
+        campaign.name,
+        campaign.status,
+        campaign.advertising_channel_type,
+        campaign.campaign_budget,
+        campaign.bidding_strategy_type,
+        campaign.bidding_strategy_system_status,
+        campaign.start_date,
+        campaign_budget.amount_micros,
+        metrics.impressions,
+        metrics.clicks,
+        metrics.cost_micros,
+        metrics.conversions,
+        metrics.conversions_value,
+        metrics.all_conversions
+      FROM campaign
+      WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+        AND campaign.status != 'REMOVED'
+      ORDER BY metrics.cost_micros DESC
+    `) as Promise<any[]>,
+    customer.query(`
+      SELECT
+        campaign.id,
+        metrics.search_impression_share,
+        metrics.search_absolute_top_impression_share,
+        metrics.search_top_impression_share
+      FROM campaign
+      WHERE campaign.status != 'REMOVED'
+    `).catch(() => [] as any[]) as Promise<any[]>,
+  ])
+
+  // Build impression-share lookup: campaign ID → IS values (already 0–100%)
+  const isMap = new Map<string, { is: number | null; abTop: number | null; top: number | null }>()
+  for (const r of isResults) {
+    const id = String(r.campaign?.id ?? '')
+    if (!id || id === 'undefined') continue
+    const is    = r.metrics?.search_impression_share
+    const abTop = r.metrics?.search_absolute_top_impression_share
+    const top   = r.metrics?.search_top_impression_share
+    isMap.set(id, {
+      is:    (is    != null && is    > 0) ? Math.round(is    * 1000) / 10 : null,
+      abTop: (abTop != null && abTop > 0) ? Math.round(abTop * 1000) / 10 : null,
+      top:   (top   != null && top   > 0) ? Math.round(top   * 1000) / 10 : null,
+    })
+  }
 
   const byCampaign = new Map<string, {
     name: string; status: string; channel_type: string
     budget_resource_name: string; daily_budget_micros: number
     impressions: number; clicks: number; cost: number; conversions: number
     conversions_value: number; all_conversions: number
-    search_is_sum: number; search_is_n: number
-    search_abs_top_sum: number; search_abs_top_n: number
-    search_top_sum: number; search_top_n: number
     bidding_strategy_type: string
     bidding_strategy_system_status: string
     start_date: string
@@ -377,16 +400,7 @@ export async function getClientCampaigns(
       prev.conversions       += r.metrics?.conversions        ?? 0
       prev.conversions_value += r.metrics?.conversions_value  ?? 0
       prev.all_conversions   += r.metrics?.all_conversions    ?? 0
-      const is    = r.metrics?.search_impression_share
-      const abTop = r.metrics?.search_absolute_top_impression_share
-      const top   = r.metrics?.search_top_impression_share
-      if (is    != null && is    > 0) { prev.search_is_sum      += is;    prev.search_is_n++      }
-      if (abTop != null && abTop > 0) { prev.search_abs_top_sum += abTop; prev.search_abs_top_n++ }
-      if (top   != null && top   > 0) { prev.search_top_sum     += top;   prev.search_top_n++     }
     } else {
-      const is    = r.metrics?.search_impression_share
-      const abTop = r.metrics?.search_absolute_top_impression_share
-      const top   = r.metrics?.search_top_impression_share
       byCampaign.set(id, {
         name:                           r.campaign?.name ?? 'Unknown',
         status:                         String(r.campaign?.status ?? 'UNKNOWN'),
@@ -399,12 +413,6 @@ export async function getClientCampaigns(
         conversions:                    r.metrics?.conversions        ?? 0,
         conversions_value:              r.metrics?.conversions_value  ?? 0,
         all_conversions:                r.metrics?.all_conversions    ?? 0,
-        search_is_sum:                  (is    != null && is    > 0) ? is    : 0,
-        search_is_n:                    (is    != null && is    > 0) ? 1     : 0,
-        search_abs_top_sum:             (abTop != null && abTop > 0) ? abTop : 0,
-        search_abs_top_n:               (abTop != null && abTop > 0) ? 1     : 0,
-        search_top_sum:                 (top   != null && top   > 0) ? top   : 0,
-        search_top_n:                   (top   != null && top   > 0) ? 1     : 0,
         bidding_strategy_type:          String(r.campaign?.bidding_strategy_type          ?? ''),
         bidding_strategy_system_status: String(r.campaign?.bidding_strategy_system_status ?? ''),
         start_date:                     String(r.campaign?.start_date ?? ''),
@@ -416,6 +424,7 @@ export async function getClientCampaigns(
     .map(([id, c]) => {
       const cost        = Math.round(c.cost * 100) / 100
       const conversions = Math.round(c.conversions * 100) / 100
+      const is          = isMap.get(id)
       return {
         id,
         name:                           c.name,
@@ -433,9 +442,9 @@ export async function getClientCampaigns(
         cost_per_conversion:            conversions > 0 ? Math.round(cost / conversions * 100) / 100 : 0,
         conversions_value:              Math.round(c.conversions_value * 100) / 100,
         all_conversions:                Math.round(c.all_conversions * 100) / 100,
-        search_impression_share:        c.search_is_n      > 0 ? Math.round(c.search_is_sum      / c.search_is_n      * 1000) / 10 : null,
-        search_abs_top_is:              c.search_abs_top_n > 0 ? Math.round(c.search_abs_top_sum / c.search_abs_top_n * 1000) / 10 : null,
-        search_top_is:                  c.search_top_n     > 0 ? Math.round(c.search_top_sum     / c.search_top_n     * 1000) / 10 : null,
+        search_impression_share:        is?.is    ?? null,
+        search_abs_top_is:              is?.abTop ?? null,
+        search_top_is:                  is?.top   ?? null,
         bidding_strategy_type:          c.bidding_strategy_type,
         bidding_strategy_system_status: c.bidding_strategy_system_status,
         start_date:                     c.start_date,
