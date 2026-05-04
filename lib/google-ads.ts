@@ -1025,6 +1025,96 @@ export async function setCampaignStatus(
   }])
 }
 
+// ─── Search Terms ─────────────────────────────────────────────────────────────
+const SEARCH_TERM_STATUS_MAP: Record<string, string> = {
+  '0': 'NONE', '1': 'NONE', '2': 'ADDED', '3': 'EXCLUDED', '4': 'ADDED_EXCLUDED', '5': 'NONE',
+  'UNSPECIFIED': 'NONE', 'UNKNOWN': 'NONE',
+  'ADDED': 'ADDED', 'EXCLUDED': 'EXCLUDED', 'ADDED_EXCLUDED': 'ADDED_EXCLUDED', 'NONE': 'NONE',
+}
+
+function normalizeSearchTermStatus(raw: any): string {
+  const s = String(raw ?? '')
+  return SEARCH_TERM_STATUS_MAP[s] ?? SEARCH_TERM_STATUS_MAP[s.toUpperCase()] ?? 'NONE'
+}
+
+export interface SearchTermRow {
+  term:         string
+  status:       string  // 'ADDED' | 'EXCLUDED' | 'ADDED_EXCLUDED' | 'NONE'
+  campaignId:   string
+  campaignName: string
+  adGroupId:    string
+  adGroupName:  string
+  impressions:  number
+  clicks:       number
+  cost:         number  // account currency
+  conversions:  number
+  ctr:          number  // percentage (0–100)
+  avgCpc:       number  // account currency
+  cpa:          number  // account currency (0 if no conversions)
+}
+
+export async function getSearchTerms(
+  clientAccountId: string,
+  startDate: string,
+  endDate: string,
+  campaignId?: string
+): Promise<SearchTermRow[]> {
+  validateDate(startDate, 'start_date')
+  validateDate(endDate,   'end_date')
+  if (startDate > endDate) throw new Error('start_date must be before end_date')
+  if (campaignId) validateCampaignId(campaignId)
+
+  const customer       = getClientCustomer(clientAccountId)
+  const campaignFilter = campaignId ? `\n      AND campaign.id = ${campaignId}` : ''
+
+  const results = await customer.query(`
+    SELECT
+      search_term_view.search_term,
+      search_term_view.status,
+      campaign.id,
+      campaign.name,
+      ad_group.id,
+      ad_group.name,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.cost_micros,
+      metrics.conversions,
+      metrics.ctr,
+      metrics.average_cpc,
+      metrics.cost_per_conversion
+    FROM search_term_view
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.status != 'REMOVED'
+      AND metrics.impressions > 0${campaignFilter}
+    ORDER BY metrics.cost_micros DESC
+    LIMIT 2000
+  `) as any[]
+
+  return results
+    .map(r => {
+      const costMicros = Number(r.metrics?.cost_micros ?? 0)
+      const cost       = Math.round(costMicros / 1_000_000 * 100) / 100
+      const conv       = Math.round(Number(r.metrics?.conversions ?? 0) * 100) / 100
+      const avgCpc     = Math.round(Number(r.metrics?.average_cpc ?? 0) / 1_000_000 * 100) / 100
+      return {
+        term:         String(r.search_term_view?.search_term ?? '').trim(),
+        status:       normalizeSearchTermStatus(r.search_term_view?.status),
+        campaignId:   String(r.campaign?.id   ?? ''),
+        campaignName: String(r.campaign?.name ?? ''),
+        adGroupId:    String(r.ad_group?.id   ?? ''),
+        adGroupName:  String(r.ad_group?.name ?? ''),
+        impressions:  Number(r.metrics?.impressions ?? 0),
+        clicks:       Number(r.metrics?.clicks      ?? 0),
+        cost,
+        conversions:  conv,
+        ctr:          Math.round(Number(r.metrics?.ctr ?? 0) * 10000) / 100, // 0–100 %
+        avgCpc,
+        cpa:          conv > 0 ? Math.round(cost / conv * 100) / 100 : 0,
+      }
+    })
+    .filter(r => r.term)
+}
+
 export async function publishPMaxCampaign(
   clientAccountId: string,
   name: string,

@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import type { AdGroupMetrics, AdData, AssetPerformance, AssetGroupMetrics } from '@/lib/google-ads'
+import { SearchTermsTab } from '@/components/dashboard/SearchTermsTab'
 
 // ─── Maps ──────────────────────────────────────────────────────────────────────
 const AD_TYPE_MAP: Record<string, string> = {
@@ -1172,6 +1173,8 @@ function AdsTab({ ads, currency, clientId, loading, error }: {
 }
 
 // ─── Main drill-down panel ─────────────────────────────────────────────────────
+type DrillTab = 'groups' | 'search_terms'
+
 interface Props {
   campaignId:   string
   campaignName: string
@@ -1185,6 +1188,8 @@ interface Props {
 
 export function CampaignDrillDown({ campaignId, campaignName, clientId, currency, startDate, endDate, channelType, onClose }: Props) {
   const isPMax = channelType === 'PERFORMANCE_MAX' || channelType === '10'
+
+  const [activeTab, setActiveTab] = useState<DrillTab>('groups')
 
   // Ad groups (non-PMax)
   const [adGroups,  setAdGroups]  = useState<AdGroupMetrics[]>([])
@@ -1225,6 +1230,8 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  const groupsLabel = isPMax ? 'Asset Groups' : 'Ad Groups'
+
   return (
     <div>
       {/* ── Header ── */}
@@ -1244,20 +1251,50 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
         </button>
       </div>
 
+      {/* ── Tab bar ── */}
+      <div className="flex items-center gap-1 px-5 pt-4 pb-0 border-b border-cloud">
+        {([
+          { id: 'groups'       as DrillTab, label: groupsLabel },
+          { id: 'search_terms' as DrillTab, label: '🔍 Search Terms' },
+        ]).map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2.5 text-xs font-heading font-bold rounded-t-lg border-b-2 transition-all -mb-px whitespace-nowrap ${
+              activeTab === tab.id
+                ? 'border-cyan text-cyan bg-cyan/5'
+                : 'border-transparent text-navy/50 hover:text-navy hover:border-cloud'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* ── Content ── */}
       <div className="p-5">
-        {isPMax ? (
-          <AssetGroupsTab assetGroups={assetGroups} currency={currency} loading={axLoading} error={axError} />
+        {activeTab === 'groups' ? (
+          isPMax ? (
+            <AssetGroupsTab assetGroups={assetGroups} currency={currency} loading={axLoading} error={axError} />
+          ) : (
+            <AdGroupsTab
+              adGroups={adGroups}
+              currency={currency}
+              clientId={clientId}
+              campaignId={campaignId}
+              startDate={startDate}
+              endDate={endDate}
+              loading={agLoading}
+              error={agError}
+            />
+          )
         ) : (
-          <AdGroupsTab
-            adGroups={adGroups}
-            currency={currency}
+          <SearchTermsTab
             clientId={clientId}
-            campaignId={campaignId}
             startDate={startDate}
             endDate={endDate}
-            loading={agLoading}
-            error={agError}
+            currency={currency}
+            campaignId={campaignId}
           />
         )}
       </div>
