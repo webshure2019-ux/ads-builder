@@ -4,8 +4,9 @@ import {
   AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
 } from 'recharts'
 import type { DailyMetrics, AccountStats, CampaignMetrics, ConversionAction } from '@/lib/google-ads'
-import { CampaignsTable } from '@/components/dashboard/CampaignsTable'
-import { SearchTermsTab } from '@/components/dashboard/SearchTermsTab'
+import { CampaignsTable }       from '@/components/dashboard/CampaignsTable'
+import { SearchTermsTab }        from '@/components/dashboard/SearchTermsTab'
+import { BudgetPacingSection }   from '@/components/dashboard/BudgetPacingSection'
 
 interface GoogleClient { id: string; name: string }
 
@@ -772,6 +773,18 @@ export function ClientDashboard() {
               </div>
             )}
           </div>
+
+          {/* ── Budget Pacing section ── */}
+          {!campaignsLoading && campaigns.length > 0 && (
+            <div className="mt-2">
+              <BudgetPacingSection
+                campaigns={campaigns}
+                startDate={rs}
+                endDate={re}
+                currency={stats.currency}
+              />
+            </div>
+          )}
 
           {/* ── Campaigns section ── */}
           <div className="mt-2">
