@@ -1337,6 +1337,89 @@ export async function setKeywordStatus(
   }])
 }
 
+// ─── Hourly (time-of-day / day-of-week) performance ──────────────────────────
+
+const DOW_NUM_MAP: Record<string, string> = {
+  '2': 'MONDAY',    '3': 'TUESDAY', '4': 'WEDNESDAY', '5': 'THURSDAY',
+  '6': 'FRIDAY',    '7': 'SATURDAY', '8': 'SUNDAY',
+  'MONDAY': 'MONDAY',   'TUESDAY': 'TUESDAY', 'WEDNESDAY': 'WEDNESDAY',
+  'THURSDAY': 'THURSDAY', 'FRIDAY': 'FRIDAY', 'SATURDAY': 'SATURDAY', 'SUNDAY': 'SUNDAY',
+}
+
+export interface HourlyRow {
+  dayOfWeek:   string  // 'MONDAY' | 'TUESDAY' | …
+  hour:        number  // 0–23 (account timezone)
+  impressions: number
+  clicks:      number
+  cost:        number
+  conversions: number
+  ctr:         number
+  convRate:    number
+  cpa:         number
+}
+
+export async function getHourlyPerformance(
+  clientAccountId: string,
+  startDate: string,
+  endDate: string,
+  campaignId?: string
+): Promise<HourlyRow[]> {
+  validateDate(startDate, 'start_date')
+  validateDate(endDate,   'end_date')
+  if (startDate > endDate) throw new Error('start_date must be before end_date')
+  if (campaignId) validateCampaignId(campaignId)
+
+  const customer       = getClientCustomer(clientAccountId)
+  const campaignFilter = campaignId ? `\n      AND campaign.id = ${campaignId}` : ''
+
+  const results = await customer.query(`
+    SELECT
+      segments.day_of_week,
+      segments.hour,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.cost_micros,
+      metrics.conversions
+    FROM campaign
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.status != 'REMOVED'${campaignFilter}
+  `) as any[]
+
+  // Aggregate across campaigns for each (day × hour) cell
+  const grid = new Map<string, { impressions: number; clicks: number; costMicros: number; conversions: number }>()
+
+  for (const r of results) {
+    const dow  = DOW_NUM_MAP[String(r.segments?.day_of_week ?? '')] ?? ''
+    const hour = Number(r.segments?.hour ?? -1)
+    if (!dow || hour < 0 || hour > 23) continue
+    const key  = `${dow}|${hour}`
+    const prev = grid.get(key) ?? { impressions: 0, clicks: 0, costMicros: 0, conversions: 0 }
+    grid.set(key, {
+      impressions: prev.impressions + (r.metrics?.impressions ?? 0),
+      clicks:      prev.clicks      + (r.metrics?.clicks      ?? 0),
+      costMicros:  prev.costMicros  + (r.metrics?.cost_micros ?? 0),
+      conversions: prev.conversions + (r.metrics?.conversions ?? 0),
+    })
+  }
+
+  return Array.from(grid.entries()).map(([key, d]) => {
+    const [dayOfWeek, hourStr] = key.split('|')
+    const cost = Math.round(d.costMicros / 1_000_000 * 100) / 100
+    const conv = Math.round(d.conversions * 100) / 100
+    return {
+      dayOfWeek,
+      hour:        Number(hourStr),
+      impressions: d.impressions,
+      clicks:      d.clicks,
+      cost,
+      conversions: conv,
+      ctr:         d.impressions > 0 ? Math.round((d.clicks / d.impressions) * 10000) / 100 : 0,
+      convRate:    d.clicks > 0 ? Math.round((conv / d.clicks) * 10000) / 100 : 0,
+      cpa:         conv > 0 ? Math.round(cost / conv * 100) / 100 : 0,
+    }
+  })
+}
+
 // ─── Negative Keywords ────────────────────────────────────────────────────────
 
 export interface NegativeKeyword {

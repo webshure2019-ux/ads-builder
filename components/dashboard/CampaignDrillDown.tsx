@@ -4,6 +4,7 @@ import type { AdGroupMetrics, AdData, AssetPerformance, AssetGroupMetrics } from
 import { SearchTermsTab } from '@/components/dashboard/SearchTermsTab'
 import { KeywordsTab }          from '@/components/dashboard/KeywordsTab'
 import { NegativeKeywordsTab }  from '@/components/dashboard/NegativeKeywordsTab'
+import { HeatmapTab }           from '@/components/dashboard/HeatmapTab'
 
 // ─── Maps ──────────────────────────────────────────────────────────────────────
 const AD_TYPE_MAP: Record<string, string> = {
@@ -1175,7 +1176,7 @@ function AdsTab({ ads, currency, clientId, loading, error }: {
 }
 
 // ─── Main drill-down panel ─────────────────────────────────────────────────────
-type DrillTab = 'groups' | 'keywords' | 'negatives' | 'search_terms'
+type DrillTab = 'groups' | 'keywords' | 'negatives' | 'heatmap' | 'search_terms'
 
 interface Props {
   campaignId:   string
@@ -1259,6 +1260,7 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
           { id: 'groups'       as DrillTab, label: groupsLabel },
           { id: 'keywords'     as DrillTab, label: '🎯 Keywords',  hidden: isPMax },
           { id: 'negatives'    as DrillTab, label: '🚫 Negatives' },
+          { id: 'heatmap'      as DrillTab, label: '⏰ Heatmap'   },
           { id: 'search_terms' as DrillTab, label: '🔍 Search Terms' },
         ]).filter(t => !(t as any).hidden).map(tab => (
           <button
@@ -1303,6 +1305,14 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
         ) : activeTab === 'negatives' ? (
           <NegativeKeywordsTab
             clientId={clientId}
+            campaignId={campaignId}
+          />
+        ) : activeTab === 'heatmap' ? (
+          <HeatmapTab
+            clientId={clientId}
+            startDate={startDate}
+            endDate={endDate}
+            currency={currency}
             campaignId={campaignId}
           />
         ) : (
