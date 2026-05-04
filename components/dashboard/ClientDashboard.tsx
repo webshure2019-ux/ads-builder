@@ -7,6 +7,7 @@ import type { DailyMetrics, AccountStats, CampaignMetrics, ConversionAction } fr
 import { CampaignsTable }       from '@/components/dashboard/CampaignsTable'
 import { SearchTermsTab }        from '@/components/dashboard/SearchTermsTab'
 import { BudgetPacingSection }   from '@/components/dashboard/BudgetPacingSection'
+import { AccountHealthScore }    from '@/components/dashboard/AccountHealthScore'
 
 interface GoogleClient { id: string; name: string }
 
@@ -742,6 +743,18 @@ export function ClientDashboard() {
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── Account Health Score ── */}
+          {!campaignsLoading && campaigns.length > 0 && (
+            <div className="mt-2">
+              <AccountHealthScore
+                campaigns={campaigns}
+                stats={stats}
+                startDate={rs}
+                endDate={re}
+              />
             </div>
           )}
 
