@@ -536,6 +536,23 @@ export async function getConversionBreakdown(
 
 // ─── Campaign ID validator (numeric-only, used in GAQL WHERE without quotes) ──
 const CAMPAIGN_ID_RE = /^\d+$/
+
+// ─── Ad strength: Google returns numeric enum values, normalise to string names ─
+const STRENGTH_NUM_MAP: Record<string, string> = {
+  '0': 'UNKNOWN',   // UNSPECIFIED — no data
+  '1': 'UNKNOWN',   // UNKNOWN
+  '2': 'PENDING',   // PENDING — waiting for data
+  '3': 'POOR',      // NO_ADS — treated as poor
+  '4': 'POOR',      // POOR
+  '5': 'AVERAGE',   // AVERAGE
+  '6': 'GOOD',      // GOOD
+  '7': 'EXCELLENT', // EXCELLENT
+}
+
+function normalizeAdStrength(raw: any): string {
+  const s = String(raw ?? '')
+  return STRENGTH_NUM_MAP[s] ?? (s.toUpperCase() || 'UNKNOWN')
+}
 function validateCampaignId(id: string): void {
   if (!CAMPAIGN_ID_RE.test(id)) throw new Error(`Invalid campaign ID: ${id}`)
 }
@@ -713,7 +730,7 @@ export async function getAds(
         ad_group_name: r.ad_group?.name         ?? 'Unknown',
         type:          String(r.ad_group_ad?.ad?.type       ?? 'UNKNOWN'),
         status:        String(r.ad_group_ad?.status          ?? 'UNKNOWN'),
-        ad_strength:   String(r.ad_group_ad?.ad_strength     ?? 'UNKNOWN'),
+        ad_strength:   normalizeAdStrength(r.ad_group_ad?.ad_strength),
         headlines:     rsaHeadlines,
         descriptions:  rsaDescriptions,
         final_url:     (r.ad_group_ad?.ad?.final_urls ?? [])[0] ?? '',

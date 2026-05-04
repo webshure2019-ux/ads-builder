@@ -94,8 +94,9 @@ const ALL_COLS: ColDef[] = [
     format: c => c.search_top_is != null ? `${c.search_top_is.toFixed(1)}%` : '—' },
 ]
 
-const DEFAULT_COL_KEYS = new Set(ALL_COLS.filter(c => c.defaultOn).map(c => c.key))
-const LS_KEY = 'ws_campaign_cols_v1'
+const DEFAULT_COL_ORDER    = ALL_COLS.map(c => c.key)
+const DEFAULT_ENABLED_KEYS = new Set(ALL_COLS.filter(c => c.defaultOn).map(c => c.key))
+const LS_KEY = 'ws_campaign_cols_v2'
 
 // ─── Shared helpers ────────────────────────────────────────────────────────────
 function SortArrow({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
@@ -105,25 +106,34 @@ function SortArrow({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
 
 function isActive(status: string) { return status === 'ENABLED' || status === '2' }
 
-// ─── localStorage column state ─────────────────────────────────────────────────
-function loadColKeys(): Set<string> {
-  if (typeof window === 'undefined') return DEFAULT_COL_KEYS
+// ─── localStorage column state (order + visibility) ───────────────────────────
+function loadColState(): { order: string[]; enabled: Set<string> } {
+  if (typeof window === 'undefined') return { order: DEFAULT_COL_ORDER, enabled: DEFAULT_ENABLED_KEYS }
   try {
     const raw = localStorage.getItem(LS_KEY)
-    return raw ? new Set(JSON.parse(raw) as string[]) : DEFAULT_COL_KEYS
-  } catch { return DEFAULT_COL_KEYS }
+    if (!raw) return { order: DEFAULT_COL_ORDER, enabled: DEFAULT_ENABLED_KEYS }
+    const { order, enabled } = JSON.parse(raw) as { order: string[]; enabled: string[] }
+    // Append any columns added since last save
+    const savedSet = new Set(order)
+    const fullOrder = [...order, ...DEFAULT_COL_ORDER.filter(k => !savedSet.has(k))]
+    return { order: fullOrder, enabled: new Set(enabled) }
+  } catch { return { order: DEFAULT_COL_ORDER, enabled: DEFAULT_ENABLED_KEYS } }
 }
 
-function saveColKeys(keys: Set<string>) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(Array.from(keys))) } catch {}
+function saveColState(order: string[], enabled: Set<string>) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ order, enabled: Array.from(enabled) })) } catch {}
 }
 
-// ─── Column picker popover ─────────────────────────────────────────────────────
-function ColumnPicker({
-  enabledKeys, onChange,
-}: { enabledKeys: Set<string>; onChange: (k: Set<string>) => void }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+// ─── Column picker popover (with drag-to-reorder) ─────────────────────────────
+function ColumnPicker({ colOrder, enabledKeys, onChange }: {
+  colOrder:    string[]
+  enabledKeys: Set<string>
+  onChange:    (order: string[], enabled: Set<string>) => void
+}) {
+  const [open,     setOpen]     = useState(false)
+  const [dragOver, setDragOver] = useState<number | null>(null)
+  const dragIdx                 = useRef<number | null>(null)
+  const ref                     = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -134,11 +144,23 @@ function ColumnPicker({
     return () => document.removeEventListener('mousedown', outside)
   }, [open])
 
-  function toggle(key: string, on: boolean) {
+  function toggleEnabled(key: string, on: boolean) {
     const next = new Set(enabledKeys)
     on ? next.add(key) : next.delete(key)
-    onChange(next)
+    onChange(colOrder, next)
   }
+
+  function handleDragStart(idx: number) { dragIdx.current = idx }
+  function handleDragOver(e: React.DragEvent, idx: number) { e.preventDefault(); setDragOver(idx) }
+  function handleDrop(idx: number) {
+    if (dragIdx.current === null || dragIdx.current === idx) { setDragOver(null); return }
+    const next = [...colOrder]
+    const [moved] = next.splice(dragIdx.current, 1)
+    next.splice(idx, 0, moved)
+    dragIdx.current = null; setDragOver(null)
+    onChange(next, enabledKeys)
+  }
+  function handleDragEnd() { dragIdx.current = null; setDragOver(null) }
 
   return (
     <div className="relative" ref={ref}>
@@ -151,30 +173,45 @@ function ColumnPicker({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 z-50 bg-white border border-cloud rounded-2xl shadow-2xl p-3 w-56">
+        <div className="absolute right-0 top-full mt-1.5 z-50 bg-white border border-cloud rounded-2xl shadow-2xl p-3 w-60">
           <p className="text-[10px] font-heading font-bold uppercase tracking-wider text-teal mb-2 px-1">
-            Show / Hide Columns
+            Columns <span className="text-navy/30 font-normal normal-case tracking-normal ml-1">— drag to reorder</span>
           </p>
           <div className="space-y-0.5 max-h-72 overflow-y-auto">
-            {ALL_COLS.map(col => (
-              <label key={col.key} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-mist cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={enabledKeys.has(col.key)}
-                  onChange={e => toggle(col.key, e.target.checked)}
-                  className="accent-cyan w-3.5 h-3.5 flex-shrink-0"
-                />
-                <span className="text-xs text-navy">{col.label}</span>
-              </label>
-            ))}
+            {colOrder.map((key, idx) => {
+              const col = ALL_COLS.find(c => c.key === key)
+              if (!col) return null
+              return (
+                <div
+                  key={key}
+                  draggable
+                  onDragStart={() => handleDragStart(idx)}
+                  onDragOver={e => handleDragOver(e, idx)}
+                  onDrop={() => handleDrop(idx)}
+                  onDragEnd={handleDragEnd}
+                  className={`flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-mist select-none transition-colors ${dragOver === idx ? 'border-t-2 border-cyan' : ''}`}
+                >
+                  <span className="text-navy/25 cursor-grab text-base leading-none flex-shrink-0" title="Drag to reorder">⠿</span>
+                  <label className="flex items-center gap-2 flex-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={enabledKeys.has(key)}
+                      onChange={e => toggleEnabled(key, e.target.checked)}
+                      className="accent-cyan w-3.5 h-3.5 flex-shrink-0"
+                    />
+                    <span className="text-xs text-navy">{col.label}</span>
+                  </label>
+                </div>
+              )
+            })}
           </div>
           <div className="border-t border-cloud mt-2 pt-2 flex items-center gap-3 px-1">
             <button
-              onClick={() => onChange(new Set(DEFAULT_COL_KEYS))}
+              onClick={() => onChange([...DEFAULT_COL_ORDER], new Set(DEFAULT_ENABLED_KEYS))}
               className="text-[10px] text-navy/40 hover:text-navy transition-colors"
             >Reset defaults</button>
             <button
-              onClick={() => onChange(new Set(ALL_COLS.map(c => c.key)))}
+              onClick={() => onChange(colOrder, new Set(ALL_COLS.map(c => c.key)))}
               className="text-[10px] text-navy/40 hover:text-navy transition-colors"
             >Show all</button>
           </div>
@@ -303,19 +340,28 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
   startDate:     string
   endDate:       string
 }) {
-  const [campaigns,  setCampaigns]  = useState<CampaignMetrics[]>(initialCampaigns)
-  const [sortKey,    setSortKey]    = useState<SortKey>('cost')
-  const [sortDir,    setSortDir]    = useState<'asc' | 'desc'>('desc')
-  const [colKeys,    setColKeys]    = useState<Set<string>>(DEFAULT_COL_KEYS)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [campaigns,    setCampaigns]    = useState<CampaignMetrics[]>(initialCampaigns)
+  const [sortKey,      setSortKey]      = useState<SortKey>('cost')
+  const [sortDir,      setSortDir]      = useState<'asc' | 'desc'>('desc')
+  const [colOrder,     setColOrder]     = useState<string[]>(DEFAULT_COL_ORDER)
+  const [colKeys,      setColKeys]      = useState<Set<string>>(DEFAULT_ENABLED_KEYS)
+  const [expandedId,   setExpandedId]   = useState<string | null>(null)
+  const [showInactive, setShowInactive] = useState(true)
 
-  // Load saved column preference on mount
-  useEffect(() => { setColKeys(loadColKeys()) }, [])
+  // Load saved column state (order + visibility) on mount
+  useEffect(() => {
+    const saved = loadColState()
+    setColOrder(saved.order)
+    setColKeys(saved.enabled)
+  }, [])
 
   // Sync whenever parent delivers a fresh fetch result
   useEffect(() => { setCampaigns(initialCampaigns) }, [initialCampaigns])
 
-  function handleColChange(next: Set<string>) { setColKeys(next); saveColKeys(next) }
+  function handleColChange(nextOrder: string[], nextEnabled: Set<string>) {
+    setColOrder(nextOrder); setColKeys(nextEnabled)
+    saveColState(nextOrder, nextEnabled)
+  }
 
   function handleBudgetUpdate(campaignId: string, newBudget: number) {
     setCampaigns(prev => prev.map(c => c.id === campaignId ? { ...c, daily_budget: newBudget } : c))
@@ -330,7 +376,11 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
     setCampaigns(prev => prev.map(c => c.id === campaignId ? { ...c, status: newStatus } : c))
   }
 
-  const visibleCols = ALL_COLS.filter(c => colKeys.has(c.key))
+  // Respect saved order; only show enabled cols
+  const visibleCols = colOrder
+    .filter(k => colKeys.has(k))
+    .map(k => ALL_COLS.find(c => c.key === k))
+    .filter((c): c is ColDef => c !== undefined)
 
   const sorted = [...campaigns].sort((a, b) => {
     if (sortKey === 'name') {
@@ -343,8 +393,11 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
     return sortDir === 'asc' ? av - bv : bv - av
   })
 
-  // Footer totals — for computable columns use totals; for IS use weighted avg of non-null rows
-  const totals = campaigns.reduce(
+  // Active-only filter — applied after sort so order is preserved
+  const visible = showInactive ? sorted : sorted.filter(c => isActive(c.status))
+
+  // Footer totals — computed from currently visible rows only
+  const totals = visible.reduce(
     (acc, c) => ({
       impressions:      acc.impressions      + c.impressions,
       clicks:           acc.clicks           + c.clicks,
@@ -399,11 +452,23 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
 
       {/* ── Toolbar ── */}
       <div className="px-5 py-2.5 border-b border-cloud/60 flex items-center justify-between gap-3 flex-wrap">
-        <p className="text-[11px] text-teal">{sorted.length} campaign{sorted.length !== 1 ? 's' : ''}</p>
+        <p className="text-[11px] text-teal">
+          {visible.length} campaign{visible.length !== 1 ? 's' : ''}
+          {!showInactive && sorted.length !== visible.length && (
+            <span className="ml-1.5 text-amber-600">({sorted.length - visible.length} hidden)</span>
+          )}
+        </p>
         <div className="flex items-center gap-2">
-          <ColumnPicker enabledKeys={colKeys} onChange={handleColChange} />
           <button
-            onClick={() => exportCSV(sorted, currency, visibleCols)}
+            onClick={() => setShowInactive(s => !s)}
+            className={`text-[11px] font-bold border px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${!showInactive ? 'bg-amber-50 text-amber-700 border-amber-300' : 'text-navy/60 hover:text-navy border-cloud hover:border-cyan/40'}`}
+            title={showInactive ? 'Hide paused campaigns' : 'Show all campaigns'}
+          >
+            {showInactive ? '◉ Hide Inactive' : '◎ Show Inactive'}
+          </button>
+          <ColumnPicker colOrder={colOrder} enabledKeys={colKeys} onChange={handleColChange} />
+          <button
+            onClick={() => exportCSV(visible, currency, visibleCols)}
             className="text-[11px] font-bold text-navy/60 hover:text-navy border border-cloud hover:border-cyan/40 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5"
             title="Download campaigns as CSV"
           >
@@ -447,7 +512,7 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
 
           {/* ── Rows ── */}
           <tbody className="divide-y divide-cloud">
-            {sorted.map(c => {
+            {visible.map(c => {
               const ch          = CHANNEL_MAP[c.channel_type] ?? { icon: '📋', label: c.channel_type }
               const active      = isActive(c.status)
               const isDrillOpen = expandedId === c.id
@@ -544,7 +609,7 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
             <tr className="border-t-2 border-cloud/70 bg-mist">
               <td className="px-5 py-3.5">
                 <p className="text-[11px] font-heading font-bold text-navy">Total</p>
-                <p className="text-[10px] text-teal mt-0.5">{campaigns.length} campaign{campaigns.length !== 1 ? 's' : ''}</p>
+                <p className="text-[10px] text-teal mt-0.5">{visible.length} campaign{visible.length !== 1 ? 's' : ''}</p>
               </td>
               <td /><td />{/* Status · Daily Budget */}
               {visibleCols.map(col => (
