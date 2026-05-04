@@ -744,6 +744,35 @@ export function ClientDashboard() {
             </div>
           )}
 
+          {/* ── Search Terms Intelligence section ── */}
+          <div className="mt-2">
+            <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+              <div>
+                <h3 className="font-heading font-bold text-navy text-lg">🔍 Search Terms Intelligence</h3>
+                <p className="text-xs text-teal mt-0.5">Identify waste, review relevance, and surface keyword opportunities</p>
+              </div>
+              {!showSearchTerms && (
+                <button
+                  onClick={() => setShowSearchTerms(true)}
+                  className="bg-cyan text-navy font-heading font-bold text-sm px-5 py-2.5 rounded-xl hover:bg-cyan/80 transition-colors flex items-center gap-2"
+                >
+                  <span>🔍</span> Analyse Search Terms
+                </button>
+              )}
+            </div>
+
+            {showSearchTerms && (
+              <div className="bg-white border border-cloud rounded-2xl p-5">
+                <SearchTermsTab
+                  clientId={clientId}
+                  startDate={rs}
+                  endDate={re}
+                  currency={stats.currency}
+                />
+              </div>
+            )}
+          </div>
+
           {/* ── Campaigns section ── */}
           <div className="mt-2">
             <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
@@ -792,35 +821,6 @@ export function ClientDashboard() {
                 startDate={rs}
                 endDate={re}
               />
-            )}
-          </div>
-
-          {/* ── Search Terms Intelligence section ── */}
-          <div className="mt-2">
-            <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-              <div>
-                <h3 className="font-heading font-bold text-navy text-lg">🔍 Search Terms Intelligence</h3>
-                <p className="text-xs text-teal mt-0.5">Identify waste, review relevance, and surface keyword opportunities</p>
-              </div>
-              {!showSearchTerms && (
-                <button
-                  onClick={() => setShowSearchTerms(true)}
-                  className="bg-cyan text-navy font-heading font-bold text-sm px-5 py-2.5 rounded-xl hover:bg-cyan/80 transition-colors flex items-center gap-2"
-                >
-                  <span>🔍</span> Analyse Search Terms
-                </button>
-              )}
-            </div>
-
-            {showSearchTerms && (
-              <div className="bg-white border border-cloud rounded-2xl p-5">
-                <SearchTermsTab
-                  clientId={clientId}
-                  startDate={rs}
-                  endDate={re}
-                  currency={stats.currency}
-                />
-              </div>
             )}
           </div>
         </>
