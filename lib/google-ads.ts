@@ -1337,6 +1337,90 @@ export async function setKeywordStatus(
   }])
 }
 
+// ─── Negative Keywords ────────────────────────────────────────────────────────
+
+export interface NegativeKeyword {
+  criterionId:  string
+  campaignId:   string
+  campaignName: string
+  text:         string
+  matchType:    string   // 'EXACT' | 'PHRASE' | 'BROAD'
+}
+
+export async function getCampaignNegatives(
+  clientAccountId: string,
+  campaignId?: string
+): Promise<NegativeKeyword[]> {
+  if (campaignId) validateCampaignId(campaignId)
+  const customer       = getClientCustomer(clientAccountId)
+  const campaignFilter = campaignId ? `\n      AND campaign.id = ${campaignId}` : ''
+
+  const results = await customer.query(`
+    SELECT
+      campaign_criterion.criterion_id,
+      campaign_criterion.keyword.text,
+      campaign_criterion.keyword.match_type,
+      campaign.id,
+      campaign.name
+    FROM campaign_criterion
+    WHERE campaign_criterion.negative = TRUE
+      AND campaign_criterion.type = 'KEYWORD'
+      AND campaign.status != 'REMOVED'${campaignFilter}
+    ORDER BY campaign_criterion.keyword.text ASC
+    LIMIT 2000
+  `) as any[]
+
+  return results
+    .map(r => ({
+      criterionId:  String(r.campaign_criterion?.criterion_id               ?? ''),
+      campaignId:   String(r.campaign?.id                                   ?? ''),
+      campaignName: String(r.campaign?.name                                 ?? ''),
+      text:         String(r.campaign_criterion?.keyword?.text              ?? '').trim(),
+      matchType:    normalizeMatchType(r.campaign_criterion?.keyword?.match_type),
+    }))
+    .filter(n => n.text && n.criterionId)
+}
+
+const NEG_MATCH_TYPE_API: Record<string, number> = { EXACT: 4, PHRASE: 3, BROAD: 2 }
+
+export async function addCampaignNegative(
+  clientAccountId: string,
+  campaignId: string,
+  text: string,
+  matchType: 'EXACT' | 'PHRASE' | 'BROAD'
+): Promise<{ criterionId: string }> {
+  validateCampaignId(campaignId)
+  if (!text.trim()) throw new Error('Keyword text is required')
+  if (!NEG_MATCH_TYPE_API[matchType]) throw new Error('Invalid match type')
+
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer        = getClientCustomer(cleanedClientId)
+
+  const resp = await (customer.campaignCriteria as any).create([{
+    campaign:   `customers/${cleanedClientId}/campaigns/${campaignId}`,
+    keyword:    { text: text.trim().toLowerCase(), match_type: NEG_MATCH_TYPE_API[matchType] },
+    negative:   true,
+  }]) as any
+
+  const resource: string = resp?.results?.[0]?.resource_name ?? ''
+  const criterionId = resource.split('~')[1] ?? ''
+  return { criterionId }
+}
+
+export async function removeCampaignNegative(
+  clientAccountId: string,
+  campaignId: string,
+  criterionId: string
+): Promise<void> {
+  if (!CAMPAIGN_ID_RE.test(campaignId))  throw new Error('Invalid campaign ID')
+  if (!CAMPAIGN_ID_RE.test(criterionId)) throw new Error('Invalid criterion ID')
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer        = getClientCustomer(cleanedClientId)
+  await (customer.campaignCriteria as any).remove([
+    `customers/${cleanedClientId}/campaignCriteria/${campaignId}~${criterionId}`,
+  ])
+}
+
 export async function publishPMaxCampaign(
   clientAccountId: string,
   name: string,
