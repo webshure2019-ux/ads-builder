@@ -1115,6 +1115,228 @@ export async function getSearchTerms(
     .filter(r => r.term)
 }
 
+// ─── Keywords ─────────────────────────────────────────────────────────────────
+
+const MATCH_TYPE_NUM_MAP: Record<string, string> = {
+  '0': 'UNKNOWN', '1': 'UNKNOWN',
+  '2': 'BROAD', '3': 'PHRASE', '4': 'EXACT', '5': 'BROAD',
+  'UNSPECIFIED': 'UNKNOWN', 'UNKNOWN': 'UNKNOWN',
+  'BROAD': 'BROAD', 'PHRASE': 'PHRASE', 'EXACT': 'EXACT',
+  'BROAD_MATCH_MODIFIER': 'BROAD',
+}
+
+const QS_BUCKET_NUM_MAP: Record<string, string> = {
+  '0': 'UNKNOWN', '1': 'UNKNOWN',
+  '2': 'BELOW_AVERAGE', '3': 'AVERAGE', '4': 'ABOVE_AVERAGE',
+  'UNSPECIFIED': 'UNKNOWN', 'UNKNOWN': 'UNKNOWN',
+  'BELOW_AVERAGE': 'BELOW_AVERAGE', 'AVERAGE': 'AVERAGE', 'ABOVE_AVERAGE': 'ABOVE_AVERAGE',
+}
+
+const KW_STATUS_STR_MAP: Record<string, string> = {
+  '0': 'UNKNOWN', '1': 'UNKNOWN', '2': 'ENABLED', '3': 'PAUSED', '4': 'REMOVED',
+  'UNSPECIFIED': 'UNKNOWN', 'UNKNOWN': 'UNKNOWN',
+  'ENABLED': 'ENABLED', 'PAUSED': 'PAUSED', 'REMOVED': 'REMOVED',
+}
+
+function normalizeMatchType(raw: any): string {
+  const s = String(raw ?? '')
+  return MATCH_TYPE_NUM_MAP[s] ?? MATCH_TYPE_NUM_MAP[s.toUpperCase()] ?? 'UNKNOWN'
+}
+
+function normalizeQsBucket(raw: any): string {
+  const s = String(raw ?? '')
+  return QS_BUCKET_NUM_MAP[s] ?? QS_BUCKET_NUM_MAP[s.toUpperCase()] ?? 'UNKNOWN'
+}
+
+function normalizeKwStatus(raw: any): string {
+  const s = String(raw ?? '')
+  return KW_STATUS_STR_MAP[s] ?? KW_STATUS_STR_MAP[s.toUpperCase()] ?? 'UNKNOWN'
+}
+
+export interface KeywordRow {
+  criterionId:    string
+  adGroupId:      string
+  adGroupName:    string
+  campaignId:     string
+  campaignName:   string
+  text:           string
+  matchType:      string    // 'EXACT' | 'PHRASE' | 'BROAD' | 'UNKNOWN'
+  status:         string    // 'ENABLED' | 'PAUSED'
+  qualityScore:   number | null  // 1–10 or null
+  expectedCtr:    string    // 'ABOVE_AVERAGE' | 'AVERAGE' | 'BELOW_AVERAGE' | 'UNKNOWN'
+  adRelevance:    string
+  landingPageExp: string
+  impressions:    number
+  clicks:         number
+  cost:           number
+  conversions:    number
+  ctr:            number    // 0–100 %
+  avgCpc:         number
+  cpa:            number
+}
+
+export async function getKeywords(
+  clientAccountId: string,
+  startDate: string,
+  endDate: string,
+  campaignId?: string
+): Promise<KeywordRow[]> {
+  validateDate(startDate, 'start_date')
+  validateDate(endDate,   'end_date')
+  if (startDate > endDate) throw new Error('start_date must be before end_date')
+  if (campaignId) validateCampaignId(campaignId)
+
+  const customer       = getClientCustomer(clientAccountId)
+  const campaignFilter = campaignId ? `\n      AND campaign.id = ${campaignId}` : ''
+
+  // Two parallel queries — QS components are current-state snapshots and must
+  // not appear in a date-segmented context (same pattern as bidding strategy status)
+  const [metricsResults, qsResults] = await Promise.all([
+    customer.query(`
+      SELECT
+        ad_group_criterion.criterion_id,
+        ad_group_criterion.keyword.text,
+        ad_group_criterion.keyword.match_type,
+        ad_group_criterion.status,
+        ad_group.id,
+        ad_group.name,
+        campaign.id,
+        campaign.name,
+        metrics.impressions,
+        metrics.clicks,
+        metrics.cost_micros,
+        metrics.conversions,
+        metrics.ctr,
+        metrics.average_cpc
+      FROM keyword_view
+      WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+        AND campaign.status != 'REMOVED'
+        AND ad_group.status != 'REMOVED'
+        AND ad_group_criterion.status != 'REMOVED'${campaignFilter}
+      ORDER BY metrics.cost_micros DESC
+      LIMIT 5000
+    `) as Promise<any[]>,
+    customer.query(`
+      SELECT
+        ad_group_criterion.criterion_id,
+        ad_group.id,
+        ad_group_criterion.quality_info.quality_score,
+        ad_group_criterion.quality_info.search_predicted_ctr,
+        ad_group_criterion.quality_info.creative_quality_score,
+        ad_group_criterion.quality_info.post_click_quality_score
+      FROM keyword_view
+      WHERE campaign.status != 'REMOVED'
+        AND ad_group.status != 'REMOVED'
+        AND ad_group_criterion.status != 'REMOVED'${campaignFilter}
+      LIMIT 10000
+    `).catch(() => [] as any[]) as Promise<any[]>,
+  ])
+
+  // QS lookup: `${adGroupId}~${criterionId}` → QS data
+  const qsMap = new Map<string, {
+    qualityScore:   number | null
+    expectedCtr:    string
+    adRelevance:    string
+    landingPageExp: string
+  }>()
+  for (const r of qsResults) {
+    const agId   = String(r.ad_group?.id                       ?? '')
+    const critId = String(r.ad_group_criterion?.criterion_id   ?? '')
+    if (!agId || !critId) continue
+    const qs = r.ad_group_criterion?.quality_info?.quality_score
+    qsMap.set(`${agId}~${critId}`, {
+      qualityScore:   (qs != null && Number(qs) > 0) ? Number(qs) : null,
+      expectedCtr:    normalizeQsBucket(r.ad_group_criterion?.quality_info?.search_predicted_ctr),
+      adRelevance:    normalizeQsBucket(r.ad_group_criterion?.quality_info?.creative_quality_score),
+      landingPageExp: normalizeQsBucket(r.ad_group_criterion?.quality_info?.post_click_quality_score),
+    })
+  }
+
+  // Aggregate metrics by keyword (date segmentation yields multiple rows per keyword)
+  const byKw = new Map<string, {
+    adGroupId: string; adGroupName: string; campaignId: string; campaignName: string
+    text: string; matchType: string; status: string
+    impressions: number; clicks: number; costMicros: number; conversions: number
+  }>()
+
+  for (const r of metricsResults) {
+    const agId   = String(r.ad_group?.id                      ?? '')
+    const critId = String(r.ad_group_criterion?.criterion_id  ?? '')
+    if (!agId || !critId) continue
+    const key  = `${agId}~${critId}`
+    const prev = byKw.get(key)
+    if (prev) {
+      prev.impressions += r.metrics?.impressions ?? 0
+      prev.clicks      += r.metrics?.clicks      ?? 0
+      prev.costMicros  += r.metrics?.cost_micros ?? 0
+      prev.conversions += r.metrics?.conversions ?? 0
+    } else {
+      byKw.set(key, {
+        adGroupId:    agId,
+        adGroupName:  String(r.ad_group?.name                          ?? ''),
+        campaignId:   String(r.campaign?.id                            ?? ''),
+        campaignName: String(r.campaign?.name                          ?? ''),
+        text:         String(r.ad_group_criterion?.keyword?.text       ?? '').trim(),
+        matchType:    normalizeMatchType(r.ad_group_criterion?.keyword?.match_type),
+        status:       normalizeKwStatus(r.ad_group_criterion?.status),
+        impressions:  r.metrics?.impressions ?? 0,
+        clicks:       r.metrics?.clicks      ?? 0,
+        costMicros:   r.metrics?.cost_micros ?? 0,
+        conversions:  r.metrics?.conversions ?? 0,
+      })
+    }
+  }
+
+  return Array.from(byKw.entries())
+    .map(([key, kw]) => {
+      const qs   = qsMap.get(key)
+      const cost = Math.round(kw.costMicros / 1_000_000 * 100) / 100
+      const conv = Math.round(kw.conversions * 100) / 100
+      const [adGroupId, criterionId] = key.split('~')
+      return {
+        criterionId,
+        adGroupId,
+        adGroupName:    kw.adGroupName,
+        campaignId:     kw.campaignId,
+        campaignName:   kw.campaignName,
+        text:           kw.text,
+        matchType:      kw.matchType,
+        status:         kw.status,
+        qualityScore:   qs?.qualityScore   ?? null,
+        expectedCtr:    qs?.expectedCtr    ?? 'UNKNOWN',
+        adRelevance:    qs?.adRelevance    ?? 'UNKNOWN',
+        landingPageExp: qs?.landingPageExp ?? 'UNKNOWN',
+        impressions:    kw.impressions,
+        clicks:         kw.clicks,
+        cost,
+        conversions:    conv,
+        ctr:            kw.impressions > 0 ? Math.round((kw.clicks / kw.impressions) * 10000) / 100 : 0,
+        avgCpc:         kw.clicks > 0 ? Math.round(cost / kw.clicks * 100) / 100 : 0,
+        cpa:            conv > 0 ? Math.round(cost / conv * 100) / 100 : 0,
+      }
+    })
+    .filter(k => k.text)
+    .sort((a, b) => b.cost - a.cost)
+}
+
+const KEYWORD_STATUS_API_MAP = { ENABLED: 2, PAUSED: 3 } as const
+
+export async function setKeywordStatus(
+  clientAccountId: string,
+  adGroupId: string,
+  criterionId: string,
+  status: 'ENABLED' | 'PAUSED'
+): Promise<void> {
+  if (!CAMPAIGN_ID_RE.test(adGroupId))   throw new Error('Invalid ad group ID')
+  if (!CAMPAIGN_ID_RE.test(criterionId)) throw new Error('Invalid criterion ID')
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer        = getClientCustomer(cleanedClientId)
+  await (customer.adGroupCriteria as any).update([{
+    resource_name: `customers/${cleanedClientId}/adGroupCriteria/${adGroupId}~${criterionId}`,
+    status:        KEYWORD_STATUS_API_MAP[status],
+  }])
+}
+
 export async function publishPMaxCampaign(
   clientAccountId: string,
   name: string,

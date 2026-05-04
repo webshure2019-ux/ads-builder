@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { AdGroupMetrics, AdData, AssetPerformance, AssetGroupMetrics } from '@/lib/google-ads'
 import { SearchTermsTab } from '@/components/dashboard/SearchTermsTab'
+import { KeywordsTab }    from '@/components/dashboard/KeywordsTab'
 
 // ─── Maps ──────────────────────────────────────────────────────────────────────
 const AD_TYPE_MAP: Record<string, string> = {
@@ -1173,7 +1174,7 @@ function AdsTab({ ads, currency, clientId, loading, error }: {
 }
 
 // ─── Main drill-down panel ─────────────────────────────────────────────────────
-type DrillTab = 'groups' | 'search_terms'
+type DrillTab = 'groups' | 'keywords' | 'search_terms'
 
 interface Props {
   campaignId:   string
@@ -1255,8 +1256,9 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
       <div className="flex items-center gap-1 px-5 pt-4 pb-0 border-b border-cloud">
         {([
           { id: 'groups'       as DrillTab, label: groupsLabel },
+          { id: 'keywords'     as DrillTab, label: '🎯 Keywords', hidden: isPMax },
           { id: 'search_terms' as DrillTab, label: '🔍 Search Terms' },
-        ]).map(tab => (
+        ]).filter(t => !(t as any).hidden).map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -1288,6 +1290,14 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
               error={agError}
             />
           )
+        ) : activeTab === 'keywords' ? (
+          <KeywordsTab
+            clientId={clientId}
+            startDate={startDate}
+            endDate={endDate}
+            currency={currency}
+            campaignId={campaignId}
+          />
         ) : (
           <SearchTermsTab
             clientId={clientId}
