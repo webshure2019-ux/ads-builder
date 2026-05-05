@@ -20,51 +20,58 @@ export async function GET(request: NextRequest) {
   try {
     const clients = await listMccClients()
 
-    // Fan out to all clients in parallel (cap at 10 to avoid rate limits)
-    const slice   = clients.slice(0, 10)
-    const results = await Promise.allSettled(
-      slice.map(async client => {
-        const [stats, campaigns] = await Promise.all([
-          getClientStats(client.id, startDate, endDate),
-          getClientCampaigns(client.id, startDate, endDate),
-        ])
-        const enabledCampaigns = campaigns.filter(
-          c => c.status === 'ENABLED' || c.status === '2'
-        )
-        const searchCampaigns = campaigns.filter(
-          c => c.search_impression_share !== null &&
-               (c.status === 'ENABLED' || c.status === '2')
-        )
-        const avgIS = searchCampaigns.length > 0
-          ? searchCampaigns.reduce((s, c) => s + (c.search_impression_share ?? 0), 0) / searchCampaigns.length
-          : null
+    // Process all accounts in concurrent batches of 8 to stay well within
+    // Google Ads API rate limits while still loading every account.
+    const BATCH = 8
+    const allResults: PromiseSettledResult<any>[] = []
 
-        return {
-          id:              client.id,
-          name:            client.name,
-          currency:        stats.currency,
-          clicks:          stats.totals.clicks,
-          cost:            stats.totals.cost,
-          impressions:     stats.totals.impressions,
-          conversions:     stats.totals.conversions,
-          ctr:             stats.totals.ctr,
-          conversion_rate: stats.totals.conversion_rate,
-          activeCampaigns: enabledCampaigns.length,
-          totalCampaigns:  campaigns.length,
-          avgImpressionShare: avgIS !== null ? Math.round(avgIS * 10) / 10 : null,
-        }
-      })
-    )
+    for (let i = 0; i < clients.length; i += BATCH) {
+      const batch = clients.slice(i, i + BATCH)
+      const batchResults = await Promise.allSettled(
+        batch.map(async client => {
+          const [stats, campaigns] = await Promise.all([
+            getClientStats(client.id, startDate, endDate),
+            getClientCampaigns(client.id, startDate, endDate),
+          ])
+          const enabledCampaigns = campaigns.filter(
+            c => c.status === 'ENABLED' || c.status === '2'
+          )
+          const searchCampaigns = campaigns.filter(
+            c => c.search_impression_share !== null &&
+                 (c.status === 'ENABLED' || c.status === '2')
+          )
+          const avgIS = searchCampaigns.length > 0
+            ? searchCampaigns.reduce((s, c) => s + (c.search_impression_share ?? 0), 0) / searchCampaigns.length
+            : null
 
-    const accounts = results
+          return {
+            id:              client.id,
+            name:            client.name,
+            currency:        stats.currency,
+            clicks:          stats.totals.clicks,
+            cost:            stats.totals.cost,
+            impressions:     stats.totals.impressions,
+            conversions:     stats.totals.conversions,
+            ctr:             stats.totals.ctr,
+            conversion_rate: stats.totals.conversion_rate,
+            activeCampaigns: enabledCampaigns.length,
+            totalCampaigns:  campaigns.length,
+            avgImpressionShare: avgIS !== null ? Math.round(avgIS * 10) / 10 : null,
+          }
+        })
+      )
+      allResults.push(...batchResults)
+    }
+
+    const accounts = allResults
       .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
       .map(r => r.value)
 
-    const failed = results
+    const failed = allResults
       .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
       .length
 
-    return NextResponse.json({ accounts, failed, total: slice.length })
+    return NextResponse.json({ accounts, failed, total: clients.length })
   } catch (err: any) {
     console.error('[mcc-summary]', err?.message ?? err)
     return NextResponse.json({ error: err.message ?? 'Failed to load MCC summary' }, { status: 500 })
