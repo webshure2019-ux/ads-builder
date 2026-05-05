@@ -1330,6 +1330,7 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
             endDate={endDate}
             campaignId={campaignId}
             campaignName={campaignName}
+            currency={currency}
           />
         ) : activeTab === 'rsa_copy' ? (
           <RSACopyTab

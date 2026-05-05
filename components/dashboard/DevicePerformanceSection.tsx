@@ -18,7 +18,7 @@ function fmt(n: number, prefix = '', suffix = '') {
 }
 
 function pct(n: number) { return `${n.toFixed(2)}%` }
-function curr(n: number) { return `$${n.toFixed(2)}` }
+function curr(n: number, c: string) { return `${c} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` }
 
 // Bid-adjustment suggestion based on conv rate vs account average
 function bidSuggestion(row: DeviceRow, avgConvRate: number): {
@@ -38,10 +38,11 @@ interface Props {
   endDate:         string
   campaignId?:     string
   campaignName?:   string
+  currency:        string
 }
 
 export function DevicePerformanceSection({
-  clientAccountId, startDate, endDate, campaignId, campaignName,
+  clientAccountId, startDate, endDate, campaignId, campaignName, currency,
 }: Props) {
   const [rows,    setRows]    = useState<DeviceRow[]>([])
   const [loading, setLoading] = useState(false)
@@ -146,7 +147,7 @@ export function DevicePerformanceSection({
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
                   <p className="text-navy/40 text-[9px] uppercase tracking-wide">Spend</p>
-                  <p className="font-bold text-navy">{curr(row.cost)}</p>
+                  <p className="font-bold text-navy">{curr(row.cost, currency)}</p>
                 </div>
                 <div>
                   <p className="text-navy/40 text-[9px] uppercase tracking-wide">Clicks</p>
@@ -158,7 +159,7 @@ export function DevicePerformanceSection({
                 </div>
                 <div>
                   <p className="text-navy/40 text-[9px] uppercase tracking-wide">CPA</p>
-                  <p className="font-bold text-navy">{row.cpa > 0 ? curr(row.cpa) : '—'}</p>
+                  <p className="font-bold text-navy">{row.cpa > 0 ? curr(row.cpa, currency) : '—'}</p>
                 </div>
                 <div>
                   <p className="text-navy/40 text-[9px] uppercase tracking-wide">CTR</p>
@@ -166,7 +167,7 @@ export function DevicePerformanceSection({
                 </div>
                 <div>
                   <p className="text-navy/40 text-[9px] uppercase tracking-wide">Avg CPC</p>
-                  <p className="font-bold text-navy">{curr(row.avgCpc)}</p>
+                  <p className="font-bold text-navy">{curr(row.avgCpc, currency)}</p>
                 </div>
               </div>
 
@@ -219,10 +220,10 @@ export function DevicePerformanceSection({
                   <td className="px-3 py-2 text-right tabular-nums text-navy/70">{fmt(row.impressions)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-navy/70">{fmt(row.clicks)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-navy/70">{pct(row.ctr)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-navy/70">{curr(row.cost)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-navy/70">{curr(row.cost, currency)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-navy/70">{row.conversions.toFixed(0)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-navy/70">{pct(row.convRate)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-navy/70">{row.cpa > 0 ? curr(row.cpa) : '—'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-navy/70">{row.cpa > 0 ? curr(row.cpa, currency) : '—'}</td>
                 </tr>
               )
             })}

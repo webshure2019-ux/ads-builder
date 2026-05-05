@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import type { LandingPageRow } from '@/lib/google-ads'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function curr(n: number)  { return `$${n.toFixed(2)}` }
+function curr(n: number, c: string) { return `${c} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` }
 function pct(n: number)   { return `${n.toFixed(2)}%` }
 function shortUrl(url: string, max = 50): string {
   try {
@@ -72,11 +72,12 @@ interface Props {
   startDate:       string
   endDate:         string
   campaignId?:     string
+  currency:        string
 }
 
 type SortKey = 'cost' | 'clicks' | 'convRate' | 'cpa' | 'speed'
 
-export function LandingPageSection({ clientAccountId, startDate, endDate, campaignId }: Props) {
+export function LandingPageSection({ clientAccountId, startDate, endDate, campaignId, currency }: Props) {
   const [rows,     setRows]     = useState<LandingPageRow[]>([])
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState<string | null>(null)
@@ -283,7 +284,7 @@ export function LandingPageSection({ clientAccountId, startDate, endDate, campai
                   <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 text-xs">
                     <div>
                       <p className="text-navy/40 text-[9px] uppercase tracking-wide">Spend</p>
-                      <p className="font-bold text-navy">{curr(row.cost)}</p>
+                      <p className="font-bold text-navy">{curr(row.cost, currency)}</p>
                     </div>
                     <div>
                       <p className="text-navy/40 text-[9px] uppercase tracking-wide">Clicks</p>
@@ -305,7 +306,7 @@ export function LandingPageSection({ clientAccountId, startDate, endDate, campai
                     </div>
                     <div>
                       <p className="text-navy/40 text-[9px] uppercase tracking-wide">CPA</p>
-                      <p className="font-bold text-navy">{row.cpa > 0 ? curr(row.cpa) : '—'}</p>
+                      <p className="font-bold text-navy">{row.cpa > 0 ? curr(row.cpa, currency) : '—'}</p>
                     </div>
                   </div>
 

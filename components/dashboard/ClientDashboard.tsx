@@ -61,7 +61,7 @@ const CARDS: CardCfg[] = [
   { key: 'clicks',          label: 'Clicks',      color: '#00C2CB',
     format: v => v.toLocaleString() },
   { key: 'cost',            label: 'Cost',        color: '#FF6B35',
-    format: (v, cur) => `${cur ?? 'ZAR'} ${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+    format: (v, cur) => (cur ? `${cur} ` : '') + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
   { key: 'conversions',     label: 'Conversions', color: '#10b981',
     format: v => v.toLocaleString(undefined, { maximumFractionDigits: 1 }) },
   { key: 'conversion_rate', label: 'Conv. Rate',  color: '#8b5cf6',
@@ -265,7 +265,8 @@ function ExpandedChart({ cfg, daily, prevDaily, currency, onClose }: {
             axisLine={false}
             tickFormatter={v => {
               const raw = cfg.format(v, currency)
-              return raw.replace(`${currency} `, '').replace('ZAR ', '')
+              // Strip any leading currency code so the axis stays compact
+              return raw.replace(/^[A-Z]{3}\s/, '')
             }}
             width={65}
           />
@@ -723,6 +724,7 @@ export function ClientDashboard() {
           stats={stats}
           prevStats={prevStats}
           campaigns={campaigns}
+          currency={stats.currency}
         />
       )}
 
@@ -838,7 +840,7 @@ export function ClientDashboard() {
           {/* ── Impression Share Deep Dive ── */}
           {!campaignsLoading && campaigns.length > 0 && (
             <div className="mt-2">
-              <ImpressionShareSection campaigns={campaigns} />
+              <ImpressionShareSection campaigns={campaigns} currency={stats.currency} />
             </div>
           )}
 
@@ -849,6 +851,7 @@ export function ClientDashboard() {
                 clientAccountId={clientId}
                 startDate={rs}
                 endDate={re}
+                currency={stats.currency}
               />
             </div>
           )}
@@ -859,6 +862,7 @@ export function ClientDashboard() {
               clientAccountId={clientId}
               startDate={rs}
               endDate={re}
+              currency={stats?.currency ?? ''}
             />
           </div>
 

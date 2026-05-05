@@ -39,7 +39,8 @@ function fmt(n: number): string {
 function detectAnomalies(
   stats:     AccountStats,
   prevStats: AccountStats | null,
-  campaigns: CampaignMetrics[]
+  campaigns: CampaignMetrics[],
+  currency:  string
 ): Alert[] {
   const alerts: Alert[] = []
   const daily = stats.daily
@@ -80,7 +81,7 @@ function detectAnomalies(
           severity: 'critical',
           icon:     c.icon,
           title:    drop ? `${c.label} dropped ${absChg.toFixed(0)}% vs prior period` : `${c.label} spiked ${absChg.toFixed(0)}% vs prior period`,
-          detail:   `Current: ${fmtVal(c.key, curVal)} · Prior: ${fmtVal(c.key, prevVal)}`,
+          detail:   `Current: ${fmtVal(c.key, curVal, currency)} · Prior: ${fmtVal(c.key, prevVal, currency)}`,
           metric:   c.metric,
           change:   chg,
         })
@@ -90,7 +91,7 @@ function detectAnomalies(
           severity: 'warning',
           icon:     c.icon,
           title:    drop ? `${c.label} down ${absChg.toFixed(0)}% vs prior period` : `${c.label} up ${absChg.toFixed(0)}% vs prior period`,
-          detail:   `Current: ${fmtVal(c.key, curVal)} · Prior: ${fmtVal(c.key, prevVal)}`,
+          detail:   `Current: ${fmtVal(c.key, curVal, currency)} · Prior: ${fmtVal(c.key, prevVal, currency)}`,
           metric:   c.metric,
           change:   chg,
         })
@@ -132,7 +133,7 @@ function detectAnomalies(
           title:    drop
             ? `${m.label} unusually low on ${day.date}`
             : `${m.label} unusually high on ${day.date}`,
-          detail:   `${fmtVal(m.key, val)} vs period avg ${fmtVal(m.key, mu)} (${fmt(absChg)}, z=${z.toFixed(1)})`,
+          detail:   `${fmtVal(m.key, val, currency)} vs period avg ${fmtVal(m.key, mu, currency)} (${fmt(absChg)}, z=${z.toFixed(1)})`,
           metric:   m.key,
           change:   absChg,
         })
@@ -196,8 +197,8 @@ function detectAnomalies(
 }
 
 // ─── Format helper ────────────────────────────────────────────────────────────
-function fmtVal(key: string, v: number): string {
-  if (key === 'cost')            return `$${v.toFixed(2)}`
+function fmtVal(key: string, v: number, currency = ''): string {
+  if (key === 'cost')            return `${currency} ${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`.trim()
   if (key === 'ctr')             return `${v.toFixed(2)}%`
   if (key === 'conversion_rate') return `${v.toFixed(2)}%`
   return v.toLocaleString(undefined, { maximumFractionDigits: 1 })
@@ -215,13 +216,14 @@ interface Props {
   stats:     AccountStats
   prevStats: AccountStats | null
   campaigns: CampaignMetrics[]
+  currency:  string
 }
 
-export function AnomalyAlertsSection({ stats, prevStats, campaigns }: Props) {
+export function AnomalyAlertsSection({ stats, prevStats, campaigns, currency }: Props) {
   const [dismissed,   setDismissed]   = useState<Set<string>>(new Set())
   const [expanded,    setExpanded]    = useState(true)
 
-  const allAlerts  = useMemo(() => detectAnomalies(stats, prevStats, campaigns), [stats, prevStats, campaigns])
+  const allAlerts  = useMemo(() => detectAnomalies(stats, prevStats, campaigns, currency), [stats, prevStats, campaigns, currency])
   const visible    = allAlerts.filter(a => !dismissed.has(a.id))
   const critCount  = visible.filter(a => a.severity === 'critical').length
   const warnCount  = visible.filter(a => a.severity === 'warning').length

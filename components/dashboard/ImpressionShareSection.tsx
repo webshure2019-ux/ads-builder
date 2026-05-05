@@ -39,12 +39,17 @@ function lostInsight(rank: number | null, budget: number | null): string | null 
   return null
 }
 
+function fmtCost(n: number, currency: string) {
+  return `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 interface Props {
   campaigns: CampaignMetrics[]
+  currency:  string
 }
 
-export function ImpressionShareSection({ campaigns }: Props) {
+export function ImpressionShareSection({ campaigns, currency }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [sortCol, setSortCol] = useState<'is' | 'rank_lost' | 'budget_lost' | 'cost'>('cost')
 
@@ -260,7 +265,7 @@ export function ImpressionShareSection({ campaigns }: Props) {
                         {pctFmt(c.search_top_is)}
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-navy/70">
-                        ${c.cost.toFixed(2)}
+                        {fmtCost(c.cost, currency)}
                       </td>
                       {/* Visual breakdown bar */}
                       <td className="px-4 py-2.5">
