@@ -255,7 +255,7 @@ export function MCCDashboard() {
           {/* Aggregate summary strip */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
-              { label: 'Total Spend',       value: `$${totals.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+              { label: 'Total Spend (all)',  value: totals.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
               { label: 'Total Clicks',      value: totals.clicks.toLocaleString() },
               { label: 'Total Conversions', value: totals.conversions.toLocaleString(undefined, { maximumFractionDigits: 1 }) },
               { label: 'Accounts',          value: accounts.length.toString() },

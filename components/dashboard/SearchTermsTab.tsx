@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import type { SearchTermRow } from '@/lib/google-ads'
 
 // ─── Recommendation types ──────────────────────────────────────────────────────
@@ -284,7 +284,7 @@ export function SearchTermsTab({
   const [terms,   setTerms]   = useState<SearchTermRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
-  const [fetched, setFetched] = useState('')   // last-fetched key to prevent double-fetch
+  const fetched = useRef('')   // last-fetched key to prevent double-fetch
 
   // Filters + UI state
   const [recsExpanded,    setRecsExpanded]    = useState(false)
@@ -308,15 +308,15 @@ export function SearchTermsTab({
   useEffect(() => {
     if (!clientId || !startDate || !endDate) return
     const key = `${clientId}|${startDate}|${endDate}|${campaignId ?? ''}`
-    if (fetched === key) return
-    setFetched(key)
+    if (fetched.current === key) return
+    fetched.current = key
     setLoading(true); setError(''); setTerms([]); setPage(1)
     const url = `/api/search-terms?client_account_id=${clientId}&start_date=${startDate}&end_date=${endDate}${campaignId ? `&campaign_id=${campaignId}` : ''}`
     fetch(url)
       .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error); setTerms(d.terms ?? []) })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [clientId, startDate, endDate, campaignId, fetched])
+  }, [clientId, startDate, endDate, campaignId])
 
   // Reset page when filters change
   useEffect(() => { setPage(1) }, [filterCampaign, filterStatus, filterRec, search, sortCol, sortDir])
@@ -744,7 +744,7 @@ export function SearchTermsTab({
           <tbody className="divide-y divide-cloud">
             {visibleRows.length === 0 ? (
               <tr>
-                <td colSpan={campaignId ? 10 : 11} className="text-center py-12 text-teal text-sm">
+                <td colSpan={campaignId ? 11 : 12} className="text-center py-12 text-teal text-sm">
                   No terms match this filter.
                 </td>
               </tr>
@@ -790,20 +790,6 @@ export function SearchTermsTab({
                   {/* Ad Group */}
                   <td className="px-4 py-3 max-w-[140px]">
                     <p className="text-[11px] text-navy/60 truncate" title={t.adGroupName}>{t.adGroupName}</p>
-                  </td>
-
-                  {/* Metrics */}
-                  <td className="px-4 py-3 text-right tabular-nums text-xs text-navy/80">{t.impressions.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-xs text-navy/80">{t.clicks.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-xs text-navy/80">{t.ctr.toFixed(2)}%</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-xs text-navy/80 whitespace-nowrap">
-                    {currency} {t.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-xs text-navy/80">
-                    {t.conversions > 0 ? t.conversions.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—'}
-                  </td>
-                  <td className={`px-4 py-3 text-right tabular-nums text-xs whitespace-nowrap ${t.cpa > 0 && avgs.cpa > 0 && t.cpa > avgs.cpa * 2 ? 'text-red-600 font-bold' : 'text-navy/80'}`}>
-                    {t.cpa > 0 ? `${currency} ${t.cpa.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                   </td>
 
                   {/* ── Actions cell ── */}
@@ -871,6 +857,20 @@ export function SearchTermsTab({
                         </button>
                       </div>
                     )}
+                  </td>
+
+                  {/* Metrics */}
+                  <td className="px-4 py-3 text-right tabular-nums text-xs text-navy/80">{t.impressions.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-xs text-navy/80">{t.clicks.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-xs text-navy/80">{t.ctr.toFixed(2)}%</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-xs text-navy/80 whitespace-nowrap">
+                    {currency} {t.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-xs text-navy/80">
+                    {t.conversions > 0 ? t.conversions.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—'}
+                  </td>
+                  <td className={`px-4 py-3 text-right tabular-nums text-xs whitespace-nowrap ${t.cpa > 0 && avgs.cpa > 0 && t.cpa > avgs.cpa * 2 ? 'text-red-600 font-bold' : 'text-navy/80'}`}>
+                    {t.cpa > 0 ? `${currency} ${t.cpa.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                   </td>
                 </tr>
               )

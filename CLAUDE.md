@@ -236,6 +236,8 @@ All routes require the `ads-auth` cookie (via `requireAuth`). All return JSON.
 | `POST /api/keyword-status` | POST | Enable or pause a keyword. |
 | `GET /api/search-terms` | GET | Search terms report for a campaign. |
 | `GET /api/negative-keywords` | GET | Campaign-level negative keywords. |
+| `POST /api/negative-keywords` | POST | Add a campaign-level negative keyword. Body: `{ client_account_id, campaign_id, text, match_type: 'EXACT' \| 'PHRASE' \| 'BROAD' }`. Returns `{ ok, criterionId }`. |
+| `POST /api/add-keyword` | POST | Add a **positive** keyword to an ad group. Body: `{ client_account_id, ad_group_id, text, match_type, cpc_bid_micros? }`. Returns `{ ok, criterionId }`. |
 
 ### Change History
 
@@ -312,6 +314,7 @@ All functions validate inputs before querying:
 | `setAdStatus(id, adId, adGroupId, status)` | Enable/pause ad |
 | `setCampaignStatus(id, campaignId, action)` | Enable/pause campaign |
 | `cloneCampaign(id, campaignId, newName)` | Clone campaign as PAUSED — creates new budget + campaign |
+| `addAdGroupKeyword(id, adGroupId, text, matchType, cpcBidMicros?)` | Add a positive keyword to an ad group. `matchType` is `'EXACT' \| 'PHRASE' \| 'BROAD'`. Internally maps to Google Ads enum values (EXACT=4, PHRASE=3, BROAD=2). Returns `{ criterionId }`. |
 
 ### GAQL Two-Query Pattern
 
@@ -330,6 +333,7 @@ Results are joined by `campaign_id` in a `Map`. See `getClientCampaigns()` for t
 
 The top-level dashboard component. Manages:
 - **Client selector** — dropdown populated from `/api/clients`
+- **URL-driven client pre-selection** — reads `?client=<id>` from the URL via `useSearchParams`. When present, automatically populates the client selector and triggers `fetchStats` on mount. This enables MCC click-through navigation.
 - **Date range presets** — Last 7 / 14 / 28 / 90 days, this month, last month, custom
 - **Compare mode** — toggles fetching the previous equivalent period for delta comparisons
 - **Stats fetch** — `fetchStats()` calls `/api/stats` (current + optionally previous period) + `/api/campaign-stats` in parallel using `Promise.all`
@@ -341,6 +345,15 @@ The top-level dashboard component. Manages:
 
 #### `fetchStats` bug fix (important)
 When `doCompare=true`, `cRes` IS the same resolved `Response` as `prevFetch`. The body is read once (`await cRes.json()`) and the result is shared for both `setCompareStats` and `setPrevStats`. **Never** call `.json()` twice on the same Response — the body stream is consumed on first read.
+
+#### `useSearchParams` requires `<Suspense>`
+`ClientDashboard` uses `useSearchParams()` from `next/navigation`. Next.js App Router requires a `<Suspense>` boundary around any Client Component that calls `useSearchParams`. In `app/clients/page.tsx`:
+```tsx
+import { Suspense } from 'react'
+// ...
+<Suspense><ClientDashboard /></Suspense>
+```
+Without this, the build fails with a `useSearchParams()` without Suspense boundary error.
 
 ### `CampaignsTable.tsx` — Campaigns List
 
@@ -359,6 +372,14 @@ Sortable table of all campaigns. Features:
 
 Progress bars showing how much of each campaign's monthly budget has been spent based on day-of-month pacing. Flags over-pacing (>110%) and under-pacing (<80%) campaigns.
 
+### `MCCDashboard.tsx` — Cross-Account Overview
+
+Renders the MCC overview at `/mcc`. Key behaviours:
+- **Click-through navigation:** Each `AccountCard` is a `<Link href="/clients?client=${account.id}">`. Clicking opens that account's full dashboard via URL-driven pre-selection in `ClientDashboard`.
+- **Leaderboard rows** also navigate on click via `onClick={() => window.location.href = \`/clients?client=${a.id}\`}`.
+- **Batched fan-out:** `/api/mcc-summary` fetches all accounts in batches of 8 (`Promise.allSettled`) to avoid rate-limiting. No arbitrary cap on account count.
+- **Aggregate spend:** The "Total Spend (all)" strip total is a raw sum across all accounts — it carries **no currency symbol** because accounts may span multiple currencies (USD, ZAR, GBP, etc.). Each individual account card formats spend correctly via `curr(account.cost, account.currency)`.
+
 ### `ImpressionShareSection.tsx`
 
 Collapsible section. Shows per-campaign impression share breakdown:
@@ -366,15 +387,15 @@ Collapsible section. Shows per-campaign impression share breakdown:
 - **Rank-Lost IS** — lost due to low Ad Rank
 - **Budget-Lost IS** — lost due to budget constraints
 
-Stacked bar chart. Attention alerts for campaigns with >40% lost IS. Sortable table.
+Stacked bar chart. Attention alerts for campaigns with >40% lost IS. Sortable table. Accepts `currency: string` prop and formats spend via `fmtCost(n, currency)`.
 
 ### `DevicePerformanceSection.tsx`
 
-Three device cards: Desktop, Mobile, Tablet. Each shows clicks, conversions, conv. rate vs account average. Suggests bid adjustment direction (increase/decrease) based on relative conv. rate.
+Three device cards: Desktop, Mobile, Tablet. Each shows clicks, conversions, conv. rate vs account average. Suggests bid adjustment direction (increase/decrease) based on relative conv. rate. Accepts `currency: string` prop and formats spend via `curr(n, currency)`.
 
 ### `LandingPageSection.tsx`
 
-Fetches from `/api/landing-page-performance`. Per-URL table with flags:
+Fetches from `/api/landing-page-performance`. Per-URL table with flags. Accepts `currency: string` prop.
 - 🐢 Speed score < 50
 - 📱 Mobile-friendly % < 70%
 - 💸 CVR below account average
@@ -450,8 +471,14 @@ Composite 0–100 score computed from: CTR, conv. rate, impression share, qualit
 
 ### `SearchTermsTab.tsx`
 - Fetches from `/api/search-terms`
-- Shows search query, match type, clicks, conversions, cost
-- "Add as keyword" button with match type selector
+- Shows search query, match type, impressions, clicks, CTR, cost, conversions, CPA
+- **Recommendations panel** — `buildRecs()` runs 4 rule-based checks to flag wasted spend, high CPA, low CTR, and promotion opportunities. Each `RecCard` has an inline match-type `<select>` + **Exclude** and **Add Keyword** buttons.
+- **Per-row table actions** — every row has `⊖ Excl` and `⊕ Add` buttons. Clicking opens a match-type picker inline (Exact/Phrase/Broad + ✓ confirm + ✕ cancel). Actions are optimistic (status updates locally on success).
+- **Exclude flow:** POST `/api/negative-keywords` → optimistically sets `status = 'EXCLUDED'` in local state.
+- **Add Keyword flow:** POST `/api/add-keyword` → optimistically sets `status = 'ADDED'` (or `'ADDED_EXCLUDED'` if was already excluded).
+- **Fetch guard:** Uses `useRef('')` (not `useState`) to store the last-fetched key. The ref is not in the `useEffect` dependency array, preventing extra effect runs.
+- **Column order (thead/tbody must match):** `dot | Term | Status | [Campaign] | Ad Group | Actions | Impr | Clicks | CTR | Cost | Conv | CPA`. The Actions `<td>` in `<tbody>` must come **before** the metric `<td>`s, mirroring the `<thead>` order.
+- **colSpan arithmetic:** With campaignId: 11 total cols (no campaign column). Without: 12 cols. Footer spans first 5 or 6 (non-metric cols incl. Actions).
 
 ---
 
@@ -472,9 +499,32 @@ useEffect(() => {
 }, [campaignId, start, end, isOpen])
 ```
 
+### Currency Formatting Pattern
+
+All monetary values are now account-currency-aware. The pattern:
+1. `/api/stats` and `/api/mcc-summary` return a `currency` field (ISO 4217 code, e.g. `'ZAR'`, `'USD'`).
+2. `ClientDashboard` passes `currency={stats.currency}` to every child section that displays money.
+3. Each section accepts `currency: string` in its Props interface.
+4. Local `curr(n, currency)` / `fmtCost(n, currency)` helpers format as: `` `${currency} ${n.toLocaleString(...)}` ``
+
+**Avoid:** hardcoding `$`, `R`, or `ZAR` anywhere. **Avoid:** `Intl.NumberFormat(..., { style: 'currency', currency: 'USD' })` — it will show the wrong symbol.
+
+**Empty-currency guard:** When `currency` is an empty string (e.g., stats haven't loaded yet), the template `` `${currency} ${n}` `` produces a leading space. This is cosmetic-only and resolves once stats load. Do not add null-guards that break the common case.
+
 ### MCC Fan-Out with `Promise.allSettled`
 
-`/api/mcc-summary` fetches stats for all client accounts in parallel. Uses `Promise.allSettled` so one failed account doesn't block the rest — failed accounts are skipped with a console warning.
+`/api/mcc-summary` fetches stats for **all** client accounts (no cap) in parallel batches of 8. Uses `Promise.allSettled` so one failed account doesn't block the rest — failed accounts are counted and reported in the `failed` field.
+
+```typescript
+const BATCH = 8
+for (let i = 0; i < clients.length; i += BATCH) {
+  const batch = clients.slice(i, i + BATCH)
+  const results = await Promise.allSettled(batch.map(async client => { ... }))
+  allResults.push(...results)
+}
+```
+
+**Never re-add a hard `.slice(0, N)` cap** — this was the root cause of the MCC showing only 10 accounts.
 
 ### Response Body Single-Consumption
 
@@ -487,6 +537,17 @@ if (cRes) {
   setPrevStats(prevData)               // share
 }
 ```
+
+### Full-Bleed Layout
+
+All pages and the Nav bar use `w-full` instead of `max-w-*` + `mx-auto`. The app fills the entire window width and adapts as the user resizes. Key classes:
+
+- **`Nav.tsx`:** `w-full px-5` (removed `max-w-[1400px] mx-auto`)
+- **`app/mcc/page.tsx`:** `w-full px-6 py-8`
+- **`app/campaigns/page.tsx`:** `w-full px-6 py-8`
+- **`components/CampaignCanvas.tsx`:** `w-full px-6 py-6`
+
+**Rule:** Never add `max-w-*` or `mx-auto` to page-level or nav-level containers.
 
 ### Set State with `Array.from()`
 
@@ -558,6 +619,30 @@ Avoids a PDF generation library dependency. The `@media print` CSS hides all UI 
 4. Review the auto-generated executive summary and insights
 5. Click "Download PDF" → browser print dialog → "Save as PDF"
 
+### MCC Click-Through to Client Dashboard
+
+1. Go to `/mcc`
+2. Click any account card → navigates to `/clients?client=<account_id>`
+3. `ClientDashboard` reads `?client=` via `useSearchParams`, pre-selects the client, and auto-fetches stats
+
+### Excluding a Search Term as Negative
+
+1. Open any Search campaign → "Search Terms" tab
+2. In the **Recommendations panel** — each `RecCard` for exclude-type recommendations has a match-type `<select>` + **⊖ Exclude** button
+3. OR in the **table** — click the `⊖ Excl` button on any row
+4. A match-type picker appears (Exact / Phrase / Broad). Click ✓ to confirm
+5. POST goes to `/api/negative-keywords` → Google Ads API `campaignCriteria.create()`
+6. Row status badge updates optimistically to "Negative" without a page reload
+
+### Adding a Search Term as a Positive Keyword
+
+1. Open any Search campaign → "Search Terms" tab
+2. In the **Recommendations panel** — `RecCard`s for `promote` or `review` actions have an **⊕ Add Keyword** button
+3. OR in the **table** — click the `⊕ Add` button on any row
+4. A match-type picker appears. Click ✓ to confirm
+5. POST goes to `/api/add-keyword` → Google Ads API `adGroupCriteria.create()`
+6. Row status badge updates optimistically to "Keyword" without a page reload
+
 ---
 
 ## 15. Known Limitations & Gotchas
@@ -572,7 +657,11 @@ Avoids a PDF generation library dependency. The `@media print` CSS hides all UI 
 - **Response body consumed once:** Never call `.json()` on the same Response object twice. Store the parsed result.
 - **Set spread:** TypeScript config doesn't support `[...Set]`. Use `Array.from(set)`.
 - **`colSpan` in CampaignsTable:** Drill-down row must use `visibleCols.length + 5` (Campaign + Status + Budget + Actions + Clone = 5 fixed columns + dynamic metric columns).
-- **Double-fetch prevention:** All lazily-loaded sections use the `useRef` key guard to prevent re-fetching on re-render.
+- **Double-fetch prevention:** All lazily-loaded sections use the `useRef` key guard to prevent re-fetching on re-render. Use `useRef` (not `useState`) for the fetched-key guard — `useState` adds the key to the dep array, causing a wasted no-op effect run on every fetch.
+- **`useSearchParams` requires `<Suspense>`:** Any Client Component that calls `useSearchParams()` must be wrapped in `<Suspense>` at its render site, or the Next.js build will fail.
+- **SearchTermsTab column order:** The Actions column header is between "Ad Group" and metrics (thead). The Actions `<td>` in tbody **must** also appear between Ad Group and metrics — not at the end of the row. Misplacing it causes all columns to visually misalign.
+- **MCC aggregate spend has no currency symbol** — accounts span multiple currencies. Showing `$` for the total is misleading. The label is "Total Spend (all)" with no prefix.
+- **`rec.key` structure in SearchTermsTab:** Keys are `campaignId__adGroupId__term_suffix` where `campaignId` and `adGroupId` are always numeric (no `__` in them). `rec.key.split('__')[0]` is campaignId, `[1]` is adGroupId. This is safe because numeric IDs never contain `__`.
 
 ### Deployment
 - All env vars must be set in Vercel — `.env.local` is never deployed.
@@ -594,4 +683,4 @@ Current test coverage is focused on utility functions in `lib/google-ads.ts` (va
 
 ---
 
-*Last updated: May 2026. Update this file whenever you add a new route, component, or change a core pattern.*
+*Last updated: May 2026 (session 2 — MCC click-through, currency props, full-bleed layout, search terms inline actions, `/api/add-keyword`, batched MCC fan-out). Update this file whenever you add a new route, component, or change a core pattern.*
