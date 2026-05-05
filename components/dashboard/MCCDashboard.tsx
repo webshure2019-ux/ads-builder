@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AccountSummary {
@@ -51,7 +52,10 @@ const IS_COLOR = (v: number | null) =>
 function AccountCard({ account, rank }: { account: AccountSummary; rank: number }) {
   const isColor = IS_COLOR(account.avgImpressionShare)
   return (
-    <div className="border border-cloud rounded-2xl p-4 bg-white hover:border-teal/40 transition-colors space-y-3">
+    <Link
+      href={`/clients?client=${account.id}`}
+      className="group block border border-cloud rounded-2xl p-4 bg-white hover:border-teal/40 hover:shadow-sm transition-all space-y-3 cursor-pointer"
+    >
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -117,7 +121,11 @@ function AccountCard({ account, rank }: { account: AccountSummary; rank: number 
         <span>{account.clicks.toLocaleString()} clicks</span>
         <span>{account.impressions.toLocaleString()} impressions</span>
       </div>
-    </div>
+
+      <div className="text-[9px] text-teal font-medium text-center pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        Open dashboard →
+      </div>
+    </Link>
   )
 }
 
@@ -304,9 +312,16 @@ export function MCCDashboard() {
                 </thead>
                 <tbody>
                   {sorted.map((a, i) => (
-                    <tr key={a.id} className={i % 2 === 0 ? 'bg-white' : 'bg-cloud/20'}>
+                    <tr
+                      key={a.id}
+                      className={`cursor-pointer hover:bg-teal/5 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-cloud/20'}`}
+                      onClick={() => window.location.href = `/clients?client=${a.id}`}
+                      title={`Open ${a.name} dashboard`}
+                    >
                       <td className="px-4 py-2 text-navy/30 text-[10px]">{i + 1}</td>
-                      <td className="px-4 py-2 font-medium text-navy max-w-[160px] truncate">{a.name}</td>
+                      <td className="px-4 py-2 font-medium text-navy max-w-[160px] truncate">
+                        <span className="text-teal hover:underline">{a.name}</span>
+                      </td>
                       <td className="px-3 py-2 text-right tabular-nums text-navy/70">{curr(a.cost, a.currency)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-navy/70">{a.clicks.toLocaleString()}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-navy/70">{pct(a.ctr)}</td>

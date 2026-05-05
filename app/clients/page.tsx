@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { Nav } from '@/components/Nav'
 import { ClientDashboard } from '@/components/dashboard/ClientDashboard'
 
@@ -7,7 +8,9 @@ export default function ClientsPage() {
   return (
     <main className="min-h-screen">
       <Nav page="clients" />
-      <ClientDashboard />
+      <Suspense>
+        <ClientDashboard />
+      </Suspense>
     </main>
   )
 }

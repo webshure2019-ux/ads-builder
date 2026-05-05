@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
 } from 'recharts'
@@ -490,8 +491,9 @@ function LearningBanner({ campaigns }: { campaigns: CampaignMetrics[] }) {
 
 // ─── Main dashboard ────────────────────────────────────────────────────────────
 export function ClientDashboard() {
+  const searchParams = useSearchParams()
   const [clients,          setClients]          = useState<GoogleClient[]>([])
-  const [clientId,         setClientId]         = useState('')
+  const [clientId,         setClientId]         = useState(() => searchParams.get('client') ?? '')
   const [preset,           setPreset]           = useState('30')
   const [customStart,      setCustomStart]       = useState('')
   const [customEnd,        setCustomEnd]         = useState('')
@@ -511,8 +513,17 @@ export function ClientDashboard() {
   const [showSearchTerms,  setShowSearchTerms]  = useState(false)
 
   useEffect(() => {
-    fetch('/api/clients').then(r => r.json()).then(d => setClients(d.clients || [])).catch(() => {})
-  }, [])
+    fetch('/api/clients').then(r => r.json()).then(d => {
+      setClients(d.clients || [])
+      // If a client was pre-selected via ?client= URL param, trigger the data load
+      // once we have the client list (so the dropdown renders the right name)
+      const preSelected = searchParams.get('client')
+      if (preSelected) {
+        const { start, end } = resolveRange('30', '', '')
+        if (start && end) fetchStats(preSelected, start, end, false)
+      }
+    }).catch(() => {})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lazily fetch conversion breakdown only when the conversions card is expanded
   useEffect(() => {
