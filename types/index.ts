@@ -206,3 +206,32 @@ export interface CanvasState {
   error: string | null
   step: CanvasStep
 }
+
+// ─── Recommendations Hub ───────────────────────────────────────────────────────
+export type ActionType =
+  | 'pause_keyword'
+  | 'update_budget'
+  | 'add_negative'
+  | 'pause_campaign'
+  | 'manual'
+
+export type RecCategory =
+  | 'keyword'
+  | 'budget'
+  | 'ad_copy'
+  | 'negative'
+  | 'bidding'
+  | 'structure'
+
+export interface Recommendation {
+  id:          string
+  category:    RecCategory
+  priority:    number   // 1–10, Claude-assigned; 10 = highest impact
+  title:       string   // Specific action with numbers, e.g. "Pause 'cheap widgets' — $280 spent, 0 conversions"
+  reasoning:   string   // 1–2 sentences with real numbers from the data
+  impact:      string   // Short estimate, e.g. "Est. saves ~$280/mo"
+  action_type: ActionType
+  action_data: Record<string, string | number>  // Parameters the apply route needs
+  applicable:  boolean  // true = Apply button; false = Manual in Google Ads tag
+  status:      'pending' | 'applied' | 'dismissed'  // Frontend state only
+}
