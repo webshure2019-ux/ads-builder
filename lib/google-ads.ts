@@ -310,6 +310,8 @@ export interface CampaignMetrics {
   search_impression_share:        number | null  // 0–100 % or null for non-Search campaigns
   search_abs_top_is:              number | null
   search_top_is:                  number | null
+  search_rank_lost_is:            number | null  // IS lost to rank (%)
+  search_budget_lost_is:          number | null  // IS lost to budget (%)
   // Smart-bidding learning phase
   bidding_strategy_type:          string
   bidding_strategy_system_status: string
@@ -357,7 +359,9 @@ export async function getClientCampaigns(
         campaign.id,
         metrics.search_impression_share,
         metrics.search_absolute_top_impression_share,
-        metrics.search_top_impression_share
+        metrics.search_top_impression_share,
+        metrics.search_rank_lost_impression_share,
+        metrics.search_budget_lost_impression_share
       FROM campaign
       WHERE campaign.status != 'REMOVED'
     `).catch(() => [] as any[]) as Promise<any[]>,
@@ -373,17 +377,24 @@ export async function getClientCampaigns(
   ])
 
   // Impression-share lookup: campaign ID → IS values (0–100 %)
-  const isMap = new Map<string, { is: number | null; abTop: number | null; top: number | null }>()
+  const isMap = new Map<string, {
+    is: number | null; abTop: number | null; top: number | null
+    rankLost: number | null; budgetLost: number | null
+  }>()
   for (const r of isResults) {
     const id = String(r.campaign?.id ?? '')
     if (!id || id === 'undefined') continue
-    const is    = r.metrics?.search_impression_share
-    const abTop = r.metrics?.search_absolute_top_impression_share
-    const top   = r.metrics?.search_top_impression_share
+    const is         = r.metrics?.search_impression_share
+    const abTop      = r.metrics?.search_absolute_top_impression_share
+    const top        = r.metrics?.search_top_impression_share
+    const rankLost   = r.metrics?.search_rank_lost_impression_share
+    const budgetLost = r.metrics?.search_budget_lost_impression_share
     isMap.set(id, {
-      is:    (is    != null && is    > 0) ? Math.round(is    * 1000) / 10 : null,
-      abTop: (abTop != null && abTop > 0) ? Math.round(abTop * 1000) / 10 : null,
-      top:   (top   != null && top   > 0) ? Math.round(top   * 1000) / 10 : null,
+      is:         (is         != null && is         > 0) ? Math.round(is         * 1000) / 10 : null,
+      abTop:      (abTop      != null && abTop      > 0) ? Math.round(abTop      * 1000) / 10 : null,
+      top:        (top        != null && top        > 0) ? Math.round(top        * 1000) / 10 : null,
+      rankLost:   (rankLost   != null && rankLost   > 0) ? Math.round(rankLost   * 1000) / 10 : null,
+      budgetLost: (budgetLost != null && budgetLost > 0) ? Math.round(budgetLost * 1000) / 10 : null,
     })
   }
 
@@ -461,9 +472,11 @@ export async function getClientCampaigns(
         cost_per_conversion:            conversions > 0 ? Math.round(cost / conversions * 100) / 100 : 0,
         conversions_value:              Math.round(c.conversions_value * 100) / 100,
         all_conversions:                Math.round(c.all_conversions * 100) / 100,
-        search_impression_share:        is?.is    ?? null,
-        search_abs_top_is:              is?.abTop ?? null,
-        search_top_is:                  is?.top   ?? null,
+        search_impression_share:        is?.is         ?? null,
+        search_abs_top_is:              is?.abTop      ?? null,
+        search_top_is:                  is?.top        ?? null,
+        search_rank_lost_is:            is?.rankLost   ?? null,
+        search_budget_lost_is:          is?.budgetLost ?? null,
         bidding_strategy_type:          attrs?.bidding_strategy_type          ?? '',
         bidding_strategy_system_status: attrs?.bidding_strategy_system_status ?? '',
         start_date:                     attrs?.start_date                     ?? '',
@@ -645,19 +658,21 @@ export async function getAdGroups(
 
 // ─── Ads ──────────────────────────────────────────────────────────────────────
 export interface AdData {
-  id:            string
-  ad_group_id:   string
-  ad_group_name: string
-  type:          string
-  status:        string
-  ad_strength:   string  // 'EXCELLENT' | 'GOOD' | 'AVERAGE' | 'POOR' | 'PENDING' | 'UNKNOWN'
-  headlines:     string[]
-  descriptions:  string[]
-  final_url:     string
-  impressions:   number
-  clicks:        number
-  cost:          number
-  ctr:           number
+  id:              string
+  ad_group_id:     string
+  ad_group_name:   string
+  type:            string
+  status:          string
+  ad_strength:     string  // 'EXCELLENT' | 'GOOD' | 'AVERAGE' | 'POOR' | 'PENDING' | 'UNKNOWN'
+  headlines:       string[]
+  descriptions:    string[]
+  final_url:       string
+  impressions:     number
+  clicks:          number
+  cost:            number
+  conversions:     number
+  conversion_rate: number
+  ctr:             number
 }
 
 export interface AssetPerformance {
@@ -697,7 +712,8 @@ export async function getAds(
       ad_group.name,
       metrics.impressions,
       metrics.clicks,
-      metrics.cost_micros
+      metrics.cost_micros,
+      metrics.conversions
     FROM ad_group_ad
     WHERE campaign.id = ${campaignId}${adGroupFilter}
       AND segments.date BETWEEN '${startDate}' AND '${endDate}'
@@ -708,7 +724,7 @@ export async function getAds(
   const byAd = new Map<string, {
     ad_group_id: string; ad_group_name: string; type: string; status: string
     ad_strength: string; headlines: string[]; descriptions: string[]; final_url: string
-    impressions: number; clicks: number; costMicros: number
+    impressions: number; clicks: number; costMicros: number; conversions: number
   }>()
 
   for (const r of results) {
@@ -716,9 +732,10 @@ export async function getAds(
     if (!id) continue
     const prev = byAd.get(id)
     if (prev) {
-      prev.impressions += r.metrics?.impressions ?? 0
-      prev.clicks      += r.metrics?.clicks      ?? 0
-      prev.costMicros  += r.metrics?.cost_micros ?? 0
+      prev.impressions += r.metrics?.impressions  ?? 0
+      prev.clicks      += r.metrics?.clicks       ?? 0
+      prev.costMicros  += r.metrics?.cost_micros  ?? 0
+      prev.conversions += r.metrics?.conversions  ?? 0
     } else {
       const rsaHeadlines    = (r.ad_group_ad?.ad?.responsive_search_ad?.headlines    ?? [])
         .map((h: any) => h.text ?? '').filter(Boolean)
@@ -728,35 +745,41 @@ export async function getAds(
       byAd.set(id, {
         ad_group_id:   String(r.ad_group?.id   ?? ''),
         ad_group_name: r.ad_group?.name         ?? 'Unknown',
-        type:          String(r.ad_group_ad?.ad?.type       ?? 'UNKNOWN'),
-        status:        String(r.ad_group_ad?.status          ?? 'UNKNOWN'),
+        type:          String(r.ad_group_ad?.ad?.type    ?? 'UNKNOWN'),
+        status:        String(r.ad_group_ad?.status       ?? 'UNKNOWN'),
         ad_strength:   normalizeAdStrength(r.ad_group_ad?.ad_strength),
         headlines:     rsaHeadlines,
         descriptions:  rsaDescriptions,
         final_url:     (r.ad_group_ad?.ad?.final_urls ?? [])[0] ?? '',
-        impressions:   r.metrics?.impressions ?? 0,
-        clicks:        r.metrics?.clicks      ?? 0,
-        costMicros:    r.metrics?.cost_micros ?? 0,
+        impressions:   r.metrics?.impressions  ?? 0,
+        clicks:        r.metrics?.clicks       ?? 0,
+        costMicros:    r.metrics?.cost_micros  ?? 0,
+        conversions:   r.metrics?.conversions  ?? 0,
       })
     }
   }
 
   return Array.from(byAd.entries())
-    .map(([id, a]) => ({
-      id,
-      ad_group_id:   a.ad_group_id,
-      ad_group_name: a.ad_group_name,
-      type:          a.type,
-      status:        a.status,
-      ad_strength:   a.ad_strength,
-      headlines:     a.headlines,
-      descriptions:  a.descriptions,
-      final_url:     a.final_url,
-      impressions:   a.impressions,
-      clicks:        a.clicks,
-      cost:          Math.round(a.costMicros / 1_000_000 * 100) / 100,
-      ctr:           a.impressions > 0 ? Math.round((a.clicks / a.impressions) * 10000) / 100 : 0,
-    }))
+    .map(([id, a]) => {
+      const conv = Math.round(a.conversions * 100) / 100
+      return {
+        id,
+        ad_group_id:     a.ad_group_id,
+        ad_group_name:   a.ad_group_name,
+        type:            a.type,
+        status:          a.status,
+        ad_strength:     a.ad_strength,
+        headlines:       a.headlines,
+        descriptions:    a.descriptions,
+        final_url:       a.final_url,
+        impressions:     a.impressions,
+        clicks:          a.clicks,
+        cost:            Math.round(a.costMicros / 1_000_000 * 100) / 100,
+        conversions:     conv,
+        conversion_rate: a.clicks > 0 ? Math.round((conv / a.clicks) * 10000) / 100 : 0,
+        ctr:             a.impressions > 0 ? Math.round((a.clicks / a.impressions) * 10000) / 100 : 0,
+      }
+    })
     .sort((a, b) => b.cost - a.cost)
 }
 
@@ -1023,6 +1046,103 @@ export async function setCampaignStatus(
     resource_name: resourceName,
     status: CAMPAIGN_STATUS[status],
   }])
+}
+
+// ─── Campaign cloning ─────────────────────────────────────────────────────────
+
+export interface CampaignTemplate {
+  id:         string  // UUID stored client-side / in localStorage
+  name:       string  // template display name
+  campaignId: string
+  accountId:  string
+  snapshot:   {
+    name:        string
+    channelType: string
+    budget:      number   // daily budget in account currency
+    biddingType: string
+    startDate:   string
+  }
+  createdAt: string   // ISO timestamp
+}
+
+export async function cloneCampaign(
+  clientAccountId: string,
+  sourceCampaignId: string,
+  newName: string
+): Promise<string> {
+  if (!/^\d+$/.test(sourceCampaignId)) throw new Error('Invalid campaign ID')
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer = getClientCustomer(cleanedClientId)
+
+  // 1. Read source campaign config
+  const rows = await customer.query(`
+    SELECT
+      campaign.name,
+      campaign.advertising_channel_type,
+      campaign.bidding_strategy_type,
+      campaign.target_cpa.target_cpa_micros,
+      campaign.target_roas.target_roas,
+      campaign.maximize_conversions.target_cpa_micros,
+      campaign.manual_cpc.enhanced_cpc_enabled,
+      campaign.network_settings.target_google_search,
+      campaign.network_settings.target_search_network,
+      campaign.network_settings.target_content_network,
+      campaign_budget.amount_micros,
+      campaign_budget.name
+    FROM campaign
+    WHERE campaign.id = ${sourceCampaignId}
+    LIMIT 1
+  `) as any[]
+
+  if (rows.length === 0) throw new Error('Source campaign not found')
+  const src = rows[0]
+
+  // 2. Create a new budget (clone the amount)
+  const budgetAmountMicros = src.campaign_budget?.amount_micros ?? 1_000_000
+  const budgetResp = await (customer.campaignBudgets as any).create([{
+    name:             `${newName} Budget`,
+    amount_micros:    budgetAmountMicros,
+    delivery_method:  2,   // STANDARD
+  }]) as any
+
+  const newBudgetName = budgetResp?.results?.[0]?.resource_name
+  if (!newBudgetName) throw new Error('Failed to create budget for cloned campaign')
+
+  // 3. Create cloned campaign (PAUSED so it doesn't immediately spend)
+  const biddingType = String(src.campaign?.bidding_strategy_type ?? '')
+  const channelType = String(src.campaign?.advertising_channel_type ?? 2)
+
+  const campaignPayload: Record<string, any> = {
+    name:             newName,
+    status:           3,   // PAUSED
+    campaign_budget:  newBudgetName,
+    advertising_channel_type: src.campaign?.advertising_channel_type ?? 2,
+    network_settings: {
+      target_google_search:  src.campaign?.network_settings?.target_google_search  ?? true,
+      target_search_network: src.campaign?.network_settings?.target_search_network ?? true,
+      target_content_network:src.campaign?.network_settings?.target_content_network ?? false,
+    },
+  }
+
+  // Carry over bidding settings
+  if (biddingType === '6' || biddingType === 'TARGET_CPA') {
+    campaignPayload.target_cpa = { target_cpa_micros: src.campaign?.target_cpa?.target_cpa_micros ?? 1_000_000 }
+  } else if (biddingType === '18' || biddingType === 'TARGET_ROAS') {
+    campaignPayload.target_roas = { target_roas: src.campaign?.target_roas?.target_roas ?? 2 }
+  } else if (biddingType === '9' || biddingType === 'MAXIMIZE_CONVERSIONS') {
+    campaignPayload.maximize_conversions = {}
+  } else {
+    // Default to manual CPC
+    campaignPayload.manual_cpc = { enhanced_cpc_enabled: false }
+  }
+
+  const campResp = await (customer.campaigns as any).create([campaignPayload]) as any
+  const newCampaignName = campResp?.results?.[0]?.resource_name
+  if (!newCampaignName) throw new Error('Failed to create cloned campaign')
+
+  // Extract numeric ID from resource name
+  const parts = newCampaignName.split('/')
+  return parts[parts.length - 1]
 }
 
 // ─── Search Terms ─────────────────────────────────────────────────────────────
@@ -1337,6 +1457,200 @@ export async function setKeywordStatus(
   }])
 }
 
+// ─── Device performance ───────────────────────────────────────────────────────
+
+export interface DeviceRow {
+  device:          'DESKTOP' | 'MOBILE' | 'TABLET' | 'CONNECTED_TV' | 'OTHER'
+  impressions:     number
+  clicks:          number
+  cost:            number
+  conversions:     number
+  ctr:             number
+  convRate:        number
+  cpa:             number
+  avgCpc:          number
+}
+
+const DEVICE_NUM_MAP: Record<string, DeviceRow['device']> = {
+  '2': 'MOBILE',  'MOBILE':        'MOBILE',
+  '3': 'DESKTOP', 'DESKTOP':       'DESKTOP',
+  '4': 'TABLET',  'TABLET':        'TABLET',
+  '6': 'CONNECTED_TV', 'CONNECTED_TV': 'CONNECTED_TV',
+}
+
+export async function getDevicePerformance(
+  clientAccountId: string,
+  startDate:       string,
+  endDate:         string,
+  campaignId?:     string
+): Promise<DeviceRow[]> {
+  validateDate(startDate, 'start_date')
+  validateDate(endDate, 'end_date')
+  if (startDate > endDate) throw new Error('start_date must be before end_date')
+  const customer = getClientCustomer(clientAccountId)
+
+  const campaignFilter = campaignId ? `AND campaign.id = '${campaignId}'` : ''
+  const rows = await customer.query(`
+    SELECT
+      segments.device,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.cost_micros,
+      metrics.conversions
+    FROM campaign
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.status != 'REMOVED'
+      ${campaignFilter}
+  `) as any[]
+
+  // Aggregate by device
+  const byDevice = new Map<DeviceRow['device'], {
+    impressions: number; clicks: number; cost: number; conversions: number
+  }>()
+
+  for (const r of rows) {
+    const raw = String(r.segments?.device ?? '')
+    const device: DeviceRow['device'] = DEVICE_NUM_MAP[raw] ?? 'OTHER'
+    const prev = byDevice.get(device)
+    const imp  = r.metrics?.impressions        ?? 0
+    const clk  = r.metrics?.clicks             ?? 0
+    const cost = (r.metrics?.cost_micros ?? 0) / 1_000_000
+    const conv = r.metrics?.conversions        ?? 0
+    if (prev) {
+      prev.impressions += imp
+      prev.clicks      += clk
+      prev.cost        += cost
+      prev.conversions += conv
+    } else {
+      byDevice.set(device, { impressions: imp, clicks: clk, cost, conversions: conv })
+    }
+  }
+
+  return Array.from(byDevice.entries())
+    .map(([device, m]) => {
+      const cost = Math.round(m.cost * 100) / 100
+      const conv = Math.round(m.conversions * 100) / 100
+      return {
+        device,
+        impressions: m.impressions,
+        clicks:      m.clicks,
+        cost,
+        conversions: conv,
+        ctr:      m.impressions > 0 ? Math.round((m.clicks / m.impressions) * 10000) / 100 : 0,
+        convRate: m.clicks      > 0 ? Math.round((conv    / m.clicks)       * 10000) / 100 : 0,
+        cpa:      conv          > 0 ? Math.round(cost / conv * 100) / 100 : 0,
+        avgCpc:   m.clicks      > 0 ? Math.round(cost / m.clicks * 100) / 100 : 0,
+      }
+    })
+    .sort((a, b) => b.cost - a.cost)
+}
+
+// ─── Landing page performance ─────────────────────────────────────────────────
+
+export interface LandingPageRow {
+  url:                  string
+  impressions:          number
+  clicks:               number
+  cost:                 number
+  conversions:          number
+  ctr:                  number
+  convRate:             number
+  cpa:                  number
+  speedScore:           number | null   // 1–10 Google page speed rating
+  mobileFriendlyPct:    number | null   // % of mobile-eligible clicks that were mobile-friendly
+  avgPageViews:         number | null   // average page views per session
+}
+
+export async function getLandingPagePerformance(
+  clientAccountId: string,
+  startDate:       string,
+  endDate:         string,
+  campaignId?:     string
+): Promise<LandingPageRow[]> {
+  validateDate(startDate, 'start_date')
+  validateDate(endDate, 'end_date')
+  if (startDate > endDate) throw new Error('start_date must be before end_date')
+  const customer = getClientCustomer(clientAccountId)
+
+  const campaignFilter = campaignId ? `AND campaign.id = '${campaignId}'` : ''
+  const rows = await customer.query(`
+    SELECT
+      landing_page_view.unexpanded_final_url,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.cost_micros,
+      metrics.conversions,
+      metrics.speed_score,
+      metrics.mobile_friendly_clicks_percentage,
+      metrics.average_page_views
+    FROM landing_page_view
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      ${campaignFilter}
+  `).catch(() => [] as any[]) as any[]
+
+  // Aggregate by URL (query may return one row per campaign per URL)
+  const byUrl = new Map<string, {
+    impressions: number; clicks: number; cost: number; conversions: number
+    speedScores: number[]; mobilePcts: number[]; pageViews: number[]
+  }>()
+
+  for (const r of rows) {
+    const url = String(r.landing_page_view?.unexpanded_final_url ?? '').trim()
+    if (!url) continue
+    const imp   = r.metrics?.impressions        ?? 0
+    const clk   = r.metrics?.clicks             ?? 0
+    const cost  = (r.metrics?.cost_micros ?? 0) / 1_000_000
+    const conv  = r.metrics?.conversions        ?? 0
+    const speed = r.metrics?.speed_score
+    const mob   = r.metrics?.mobile_friendly_clicks_percentage
+    const pages = r.metrics?.average_page_views
+
+    const prev = byUrl.get(url)
+    if (prev) {
+      prev.impressions += imp
+      prev.clicks      += clk
+      prev.cost        += cost
+      prev.conversions += conv
+      if (speed != null && speed > 0) prev.speedScores.push(speed)
+      if (mob   != null && mob   > 0) prev.mobilePcts.push(mob)
+      if (pages != null && pages > 0) prev.pageViews.push(pages)
+    } else {
+      byUrl.set(url, {
+        impressions: imp, clicks: clk, cost, conversions: conv,
+        speedScores: (speed != null && speed > 0) ? [speed] : [],
+        mobilePcts:  (mob   != null && mob   > 0) ? [mob]   : [],
+        pageViews:   (pages != null && pages > 0) ? [pages] : [],
+      })
+    }
+  }
+
+  function avg(arr: number[]): number | null {
+    if (arr.length === 0) return null
+    return arr.reduce((s, n) => s + n, 0) / arr.length
+  }
+
+  return Array.from(byUrl.entries())
+    .map(([url, m]) => {
+      const cost = Math.round(m.cost * 100) / 100
+      const conv = Math.round(m.conversions * 100) / 100
+      return {
+        url,
+        impressions:       m.impressions,
+        clicks:            m.clicks,
+        cost,
+        conversions:       conv,
+        ctr:               m.impressions > 0 ? Math.round((m.clicks / m.impressions) * 10000) / 100 : 0,
+        convRate:          m.clicks      > 0 ? Math.round((conv / m.clicks) * 10000) / 100 : 0,
+        cpa:               conv          > 0 ? Math.round(cost / conv * 100) / 100 : 0,
+        speedScore:        avg(m.speedScores) !== null ? Math.round(avg(m.speedScores)! * 10) / 10 : null,
+        mobileFriendlyPct: avg(m.mobilePcts)  !== null ? Math.round(avg(m.mobilePcts)!  * 10) / 10 : null,
+        avgPageViews:      avg(m.pageViews)   !== null ? Math.round(avg(m.pageViews)!   * 100) / 100 : null,
+      }
+    })
+    .filter(r => r.clicks > 0)
+    .sort((a, b) => b.cost - a.cost)
+}
+
 // ─── Hourly (time-of-day / day-of-week) performance ──────────────────────────
 
 const DOW_NUM_MAP: Record<string, string> = {
@@ -1502,6 +1816,110 @@ export async function removeCampaignNegative(
   await (customer.campaignCriteria as any).remove([
     `customers/${cleanedClientId}/campaignCriteria/${campaignId}~${criterionId}`,
   ])
+}
+
+// ─── Change History ───────────────────────────────────────────────────────────
+
+const CHANGE_RESOURCE_TYPE_MAP: Record<string, string> = {
+  '2':  'Campaign',   'CAMPAIGN':              'Campaign',
+  '3':  'Ad Group',   'AD_GROUP':              'Ad Group',
+  '4':  'Ad',         'AD_GROUP_AD':           'Ad',
+  '5':  'Keyword',    'AD_GROUP_CRITERION':    'Keyword',
+  '6':  'Excl. Keyword', 'CAMPAIGN_CRITERION': 'Excl. Keyword',
+  '8':  'Budget',     'CAMPAIGN_BUDGET':       'Budget',
+  '18': 'Bid Strategy', 'BIDDING_STRATEGY':    'Bid Strategy',
+}
+
+const CHANGE_OP_MAP: Record<string, string> = {
+  '1': 'Created', 'CREATE': 'Created',
+  '2': 'Updated', 'UPDATE': 'Updated',
+  '3': 'Removed', 'REMOVE': 'Removed',
+}
+
+const CLIENT_TYPE_MAP: Record<string, string> = {
+  '2': 'Google Ads UI',  'GOOGLE_ADS_WEB_CLIENT': 'Google Ads UI',
+  '3': 'API',            'GOOGLE_ADS_API':         'API',
+  '4': 'Editor',         'GOOGLE_ADS_EDITOR':      'Editor',
+  '5': 'Mobile App',     'GOOGLE_ADS_MOBILE_APP':  'Mobile App',
+}
+
+export interface ChangeEvent {
+  id:            string
+  dateTime:      string  // ISO-8601
+  resourceType:  string  // 'Campaign' | 'Ad Group' | 'Ad' | 'Keyword' | …
+  operation:     string  // 'Created' | 'Updated' | 'Removed'
+  resourceName:  string  // e.g. campaigns/123
+  changedFields: string[]
+  campaignId:    string
+  campaignName:  string
+  adGroupId:     string
+  adGroupName:   string
+  userEmail:     string
+  clientType:    string
+}
+
+export async function getChangeHistory(
+  clientAccountId: string,
+  startDate:       string,
+  endDate:         string,
+  campaignId?:     string
+): Promise<ChangeEvent[]> {
+  validateDate(startDate, 'start_date')
+  validateDate(endDate, 'end_date')
+  if (startDate > endDate) throw new Error('start_date must be before end_date')
+  const customer = getClientCustomer(clientAccountId)
+
+  // change_event uses datetime ranges (not just dates)
+  const startDt = `${startDate} 00:00:00`
+  const endDt   = `${endDate} 23:59:59`
+
+  const campaignFilter = campaignId ? `\n  AND campaign.id = ${campaignId}` : ''
+
+  const rows = await customer.query(`
+    SELECT
+      change_event.change_date_time,
+      change_event.change_resource_name,
+      change_event.change_resource_type,
+      change_event.resource_change_operation,
+      change_event.changed_fields,
+      change_event.user_email,
+      change_event.client_type,
+      campaign.id,
+      campaign.name,
+      ad_group.id,
+      ad_group.name
+    FROM change_event
+    WHERE change_event.change_date_time BETWEEN '${startDt}' AND '${endDt}'
+      ${campaignFilter}
+    ORDER BY change_event.change_date_time DESC
+    LIMIT 200
+  `).catch(() => [] as any[]) as any[]
+
+  return rows.map((r: any, i: number) => {
+    const rawType    = String(r.change_event?.change_resource_type ?? '')
+    const rawOp      = String(r.change_event?.resource_change_operation ?? '')
+    const rawClient  = String(r.change_event?.client_type ?? '')
+    const rawFields  = r.change_event?.changed_fields ?? ''
+
+    const changedFields: string[] = typeof rawFields === 'string' && rawFields
+      ? rawFields.split(',').map((f: string) => f.trim().replace(/^.*\./, '')).filter(Boolean)
+      : []
+
+    return {
+      id:            `${i}_${r.change_event?.change_date_time ?? i}`,
+      dateTime:      String(r.change_event?.change_date_time ?? ''),
+      resourceType:  CHANGE_RESOURCE_TYPE_MAP[rawType]  ?? rawType,
+      operation:     CHANGE_OP_MAP[rawOp]               ?? rawOp,
+      resourceName:  String(r.change_event?.change_resource_name ?? ''),
+      changedFields,
+      campaignId:    String(r.campaign?.id    ?? ''),
+      campaignName:  String(r.campaign?.name  ?? ''),
+      adGroupId:     String(r.ad_group?.id    ?? ''),
+      adGroupName:   String(r.ad_group?.name  ?? ''),
+      userEmail:     String(r.change_event?.user_email  ?? ''),
+      clientType:    CLIENT_TYPE_MAP[rawClient] ?? rawClient,
+    }
+  }).filter((e: ChangeEvent) => e.dateTime)
 }
 
 export async function publishPMaxCampaign(

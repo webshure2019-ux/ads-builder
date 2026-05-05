@@ -5,9 +5,15 @@ import {
 } from 'recharts'
 import type { DailyMetrics, AccountStats, CampaignMetrics, ConversionAction } from '@/lib/google-ads'
 import { CampaignsTable }       from '@/components/dashboard/CampaignsTable'
-import { SearchTermsTab }        from '@/components/dashboard/SearchTermsTab'
-import { BudgetPacingSection }   from '@/components/dashboard/BudgetPacingSection'
-import { AccountHealthScore }    from '@/components/dashboard/AccountHealthScore'
+import { SearchTermsTab }           from '@/components/dashboard/SearchTermsTab'
+import { BudgetPacingSection }      from '@/components/dashboard/BudgetPacingSection'
+import { AccountHealthScore }       from '@/components/dashboard/AccountHealthScore'
+import { ImpressionShareSection }   from '@/components/dashboard/ImpressionShareSection'
+import { DevicePerformanceSection } from '@/components/dashboard/DevicePerformanceSection'
+import { LandingPageSection }       from '@/components/dashboard/LandingPageSection'
+import { AnomalyAlertsSection }    from '@/components/dashboard/AnomalyAlertsSection'
+import { ChangeHistorySection }    from '@/components/dashboard/ChangeHistorySection'
+import { ClientReportSection }     from '@/components/dashboard/ClientReportSection'
 
 interface GoogleClient { id: string; name: string }
 
@@ -492,6 +498,7 @@ export function ClientDashboard() {
   const [compare,          setCompare]          = useState(false)
   const [stats,            setStats]            = useState<AccountStats | null>(null)
   const [compareStats,     setCompareStats]     = useState<AccountStats | null>(null)
+  const [prevStats,        setPrevStats]        = useState<AccountStats | null>(null)
   const [campaigns,        setCampaigns]        = useState<CampaignMetrics[]>([])
   const [campaignsLoading, setCampaignsLoading] = useState(false)
   const [loading,          setLoading]          = useState(false)
@@ -543,18 +550,27 @@ export function ClientDashboard() {
 
     try {
       const prevRange = getPreviousRange(start, end)
+      const prevFetch = fetch(`/api/stats?client_account_id=${id}&start_date=${prevRange.start}&end_date=${prevRange.end}`)
       const [res, cRes, campRes] = await Promise.all([
         fetch(`/api/stats?client_account_id=${id}&start_date=${start}&end_date=${end}`),
-        doCompare
-          ? fetch(`/api/stats?client_account_id=${id}&start_date=${prevRange.start}&end_date=${prevRange.end}`)
-          : Promise.resolve(null),
+        doCompare ? prevFetch : Promise.resolve(null),
         fetch(`/api/campaign-stats?client_account_id=${id}&start_date=${start}&end_date=${end}`),
       ])
 
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to load stats')
       setStats(data)
-      setCompareStats(cRes ? await cRes.json() : null)
+
+      if (cRes) {
+        // doCompare=true: cRes IS prevFetch's resolved Response — read body once, share data
+        const prevData = await cRes.json()
+        setCompareStats(prevData)
+        setPrevStats(prevData)
+      } else {
+        // doCompare=false: prevFetch runs independently — read it separately for anomaly detection
+        setCompareStats(null)
+        prevFetch.then(r => r.json()).then(d => setPrevStats(d)).catch(() => {})
+      }
 
       const campData = await campRes.json()
       setCampaigns(campRes.ok ? (campData.campaigns ?? []) : [])
@@ -690,6 +706,15 @@ export function ClientDashboard() {
         </div>
       )}
 
+      {/* ── Anomaly Alerts (always on top) ── */}
+      {stats && !loading && campaigns.length > 0 && (
+        <AnomalyAlertsSection
+          stats={stats}
+          prevStats={prevStats}
+          campaigns={campaigns}
+        />
+      )}
+
       {/* ── Dashboard ── */}
       {stats && !loading && (
         <>
@@ -798,6 +823,54 @@ export function ClientDashboard() {
               />
             </div>
           )}
+
+          {/* ── Impression Share Deep Dive ── */}
+          {!campaignsLoading && campaigns.length > 0 && (
+            <div className="mt-2">
+              <ImpressionShareSection campaigns={campaigns} />
+            </div>
+          )}
+
+          {/* ── Device Performance ── */}
+          {!campaignsLoading && campaigns.length > 0 && (
+            <div className="mt-2">
+              <DevicePerformanceSection
+                clientAccountId={clientId}
+                startDate={rs}
+                endDate={re}
+              />
+            </div>
+          )}
+
+          {/* ── Landing Page Performance ── */}
+          <div className="mt-2">
+            <LandingPageSection
+              clientAccountId={clientId}
+              startDate={rs}
+              endDate={re}
+            />
+          </div>
+
+          {/* ── Change History ── */}
+          <div className="mt-2">
+            <ChangeHistorySection
+              clientAccountId={clientId}
+              startDate={rs}
+              endDate={re}
+            />
+          </div>
+
+          {/* ── Client Report ── */}
+          <div className="mt-2">
+            <ClientReportSection
+              clientName={selectedClient?.name ?? clientId}
+              startDate={rs}
+              endDate={re}
+              stats={stats}
+              prevStats={prevStats}
+              campaigns={campaigns}
+            />
+          </div>
 
           {/* ── Campaigns section ── */}
           <div className="mt-2">

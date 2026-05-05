@@ -1,10 +1,14 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import type { AdGroupMetrics, AdData, AssetPerformance, AssetGroupMetrics } from '@/lib/google-ads'
-import { SearchTermsTab } from '@/components/dashboard/SearchTermsTab'
-import { KeywordsTab }          from '@/components/dashboard/KeywordsTab'
-import { NegativeKeywordsTab }  from '@/components/dashboard/NegativeKeywordsTab'
-import { HeatmapTab }           from '@/components/dashboard/HeatmapTab'
+import { SearchTermsTab }           from '@/components/dashboard/SearchTermsTab'
+import { KeywordsTab }              from '@/components/dashboard/KeywordsTab'
+import { NegativeKeywordsTab }      from '@/components/dashboard/NegativeKeywordsTab'
+import { HeatmapTab }               from '@/components/dashboard/HeatmapTab'
+import { DevicePerformanceSection } from '@/components/dashboard/DevicePerformanceSection'
+import { RSACopyTab }               from '@/components/dashboard/RSACopyTab'
+import { ChangeHistorySection }    from '@/components/dashboard/ChangeHistorySection'
+import { ABTestingTab }            from '@/components/dashboard/ABTestingTab'
 
 // ─── Maps ──────────────────────────────────────────────────────────────────────
 const AD_TYPE_MAP: Record<string, string> = {
@@ -1176,7 +1180,7 @@ function AdsTab({ ads, currency, clientId, loading, error }: {
 }
 
 // ─── Main drill-down panel ─────────────────────────────────────────────────────
-type DrillTab = 'groups' | 'keywords' | 'negatives' | 'heatmap' | 'search_terms'
+type DrillTab = 'groups' | 'keywords' | 'negatives' | 'heatmap' | 'devices' | 'rsa_copy' | 'ab_test' | 'changes' | 'search_terms'
 
 interface Props {
   campaignId:   string
@@ -1261,6 +1265,10 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
           { id: 'keywords'     as DrillTab, label: '🎯 Keywords',  hidden: isPMax },
           { id: 'negatives'    as DrillTab, label: '🚫 Negatives' },
           { id: 'heatmap'      as DrillTab, label: '⏰ Heatmap'   },
+          { id: 'devices'      as DrillTab, label: '📱 Devices'      },
+          { id: 'rsa_copy'     as DrillTab, label: '✍️ RSA Copy', hidden: isPMax },
+          { id: 'ab_test'      as DrillTab, label: '🧪 A/B Test', hidden: isPMax },
+          { id: 'changes'      as DrillTab, label: '📋 Changes'   },
           { id: 'search_terms' as DrillTab, label: '🔍 Search Terms' },
         ]).filter(t => !(t as any).hidden).map(tab => (
           <button
@@ -1314,6 +1322,38 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
             endDate={endDate}
             currency={currency}
             campaignId={campaignId}
+          />
+        ) : activeTab === 'devices' ? (
+          <DevicePerformanceSection
+            clientAccountId={clientId}
+            startDate={startDate}
+            endDate={endDate}
+            campaignId={campaignId}
+            campaignName={campaignName}
+          />
+        ) : activeTab === 'rsa_copy' ? (
+          <RSACopyTab
+            clientId={clientId}
+            campaignId={campaignId}
+            startDate={startDate}
+            endDate={endDate}
+            currency={currency}
+          />
+        ) : activeTab === 'ab_test' ? (
+          <ABTestingTab
+            clientId={clientId}
+            campaignId={campaignId}
+            startDate={startDate}
+            endDate={endDate}
+            currency={currency}
+          />
+        ) : activeTab === 'changes' ? (
+          <ChangeHistorySection
+            clientAccountId={clientId}
+            startDate={startDate}
+            endDate={endDate}
+            campaignId={campaignId}
+            campaignName={campaignName}
           />
         ) : (
           <SearchTermsTab

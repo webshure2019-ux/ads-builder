@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect, useRef, Fragment } from 'react'
 import type { CampaignMetrics } from '@/lib/google-ads'
-import { CampaignDrillDown } from '@/components/dashboard/CampaignDrillDown'
+import { CampaignDrillDown }    from '@/components/dashboard/CampaignDrillDown'
+import { CampaignCloneModal, CampaignTemplatesPanel } from '@/components/dashboard/CampaignCloneModal'
 
 // ─── Channel type display map ──────────────────────────────────────────────────
 const CHANNEL_MAP: Record<string, { icon: string; label: string }> = {
@@ -347,6 +348,8 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
   const [colKeys,      setColKeys]      = useState<Set<string>>(DEFAULT_ENABLED_KEYS)
   const [expandedId,   setExpandedId]   = useState<string | null>(null)
   const [showInactive, setShowInactive] = useState(true)
+  const [cloneTarget,  setCloneTarget]  = useState<CampaignMetrics | null>(null)
+  const [showTemplates,setShowTemplates]= useState(false)
 
   // Load saved column state (order + visibility) on mount
   useEffect(() => {
@@ -468,6 +471,13 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
           </button>
           <ColumnPicker colOrder={colOrder} enabledKeys={colKeys} onChange={handleColChange} />
           <button
+            onClick={() => setShowTemplates(true)}
+            className="text-[11px] font-bold text-navy/60 hover:text-navy border border-cloud hover:border-cyan/40 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5"
+            title="View saved campaign templates"
+          >
+            💾 Templates
+          </button>
+          <button
             onClick={() => exportCSV(visible, currency, visibleCols)}
             className="text-[11px] font-bold text-navy/60 hover:text-navy border border-cloud hover:border-cyan/40 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5"
             title="Download campaigns as CSV"
@@ -578,12 +588,23 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
                         currentStatus={c.status} onStatusChange={handleStatusChange}
                       />
                     </td>
+
+                    {/* Clone */}
+                    <td className="px-3 py-3.5 text-right">
+                      <button
+                        onClick={e => { e.stopPropagation(); setCloneTarget(c) }}
+                        className="text-[10px] text-navy/40 hover:text-teal border border-transparent hover:border-cloud px-2 py-1 rounded-lg transition-all"
+                        title="Clone campaign"
+                      >
+                        📋
+                      </button>
+                    </td>
                   </tr>
 
                   {/* ── Inline drill-down — expands directly below the campaign row ── */}
                   {isDrillOpen && (
                     <tr>
-                      <td colSpan={visibleCols.length + 4} className="p-0">
+                      <td colSpan={visibleCols.length + 5} className="p-0">
                         <div className="border-t-2 border-cyan/20 animate-in fade-in duration-150">
                           <CampaignDrillDown
                             campaignId={c.id}
@@ -618,10 +639,27 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
                 </td>
               ))}
               <td />{/* Actions */}
+              <td />{/* Clone */}
             </tr>
           </tfoot>
         </table>
       </div>
+
+      {/* Clone modal */}
+      {cloneTarget && (
+        <CampaignCloneModal
+          campaign={cloneTarget}
+          clientId={clientId}
+          clientName={clientId}
+          onClose={() => setCloneTarget(null)}
+          onCloned={() => setCloneTarget(null)}
+        />
+      )}
+
+      {/* Templates panel */}
+      {showTemplates && (
+        <CampaignTemplatesPanel onClose={() => setShowTemplates(false)} />
+      )}
     </div>
   )
 }
