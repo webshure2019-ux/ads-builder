@@ -42,7 +42,7 @@ export default async function CampaignsPage() {
     <main className="min-h-screen">
       <Nav page="campaigns" action={<NewCampaignBtn />} />
 
-      <div className="max-w-5xl mx-auto px-5 py-8 animate-slide-up">
+      <div className="w-full px-6 py-8 animate-slide-up">
         <h1 className="font-heading font-bold text-2xl mb-6" style={{ color: 'var(--text-1)' }}>
           Campaign Library
         </h1>

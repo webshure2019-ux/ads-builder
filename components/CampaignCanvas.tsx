@@ -240,7 +240,7 @@ export function CampaignCanvas() {
     : { pkg: 0, groups: 0, details: 0, brief: 2, settings: 3, gen: 4, review: 5 }
 
   return (
-    <div className="grid grid-cols-[1fr_300px] gap-5 max-w-7xl mx-auto px-5 py-6 animate-fade-in">
+    <div className="grid grid-cols-[1fr_300px] gap-5 w-full px-6 py-6 animate-fade-in">
       <div>
 
         {/* 1. Campaign Type */}

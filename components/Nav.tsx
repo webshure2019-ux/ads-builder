@@ -18,7 +18,7 @@ export function Nav({ page, action }: NavProps) {
   return (
     <nav className="sticky top-0 z-50 glass-hi border-b border-[var(--border-lo)]"
          style={{ borderBottom: '1px solid var(--border-lo)' }}>
-      <div className="max-w-[1400px] mx-auto px-5 h-14 flex items-center gap-4">
+      <div className="w-full px-5 h-14 flex items-center gap-4">
 
         {/* Logo */}
         <Link href="/" className="flex-shrink-0 flex items-center h-9">
