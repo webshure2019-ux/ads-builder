@@ -155,6 +155,9 @@ const STATUS_CFG: Record<string, { label: string; bg: string; text: string }> = 
 type SortKey = 'impressions' | 'clicks' | 'ctr' | 'cost' | 'conversions' | 'cpa'
 const PAGE_SIZE = 50
 
+type MatchType = 'EXACT' | 'PHRASE' | 'BROAD'
+type ActionResult = { type: 'exclude' | 'add'; ok: boolean; msg: string }
+
 // ─── Sub-components ────────────────────────────────────────────────────────────
 function SumCard({ label, value, sub, accent }: {
   label: string; value: string; sub?: string; accent?: string
@@ -168,8 +171,34 @@ function SumCard({ label, value, sub, accent }: {
   )
 }
 
-function RecCard({ rec, currency }: { rec: Rec; currency: string }) {
+function RecCard({ rec, currency, clientId, onExclude, onAdd }: {
+  rec:      Rec
+  currency: string
+  clientId: string
+  onExclude: (term: string, campaignId: string, adGroupId: string, matchType: MatchType) => Promise<void>
+  onAdd:     (term: string, campaignId: string, adGroupId: string, matchType: MatchType) => Promise<void>
+}) {
   const cfg = REC_CFG[rec.priority]
+  const [doing, setDoing]   = useState<'exclude' | 'add' | null>(null)
+  const [done,  setDone]    = useState<string | null>(null)
+  const [err,   setErr]     = useState<string | null>(null)
+  const [mt,    setMt]      = useState<MatchType>('EXACT')
+
+  // Extract campaignId + adGroupId from rec.key: "campaignId__adGroupId__term_suffix"
+  const parts      = rec.key.split('__')
+  const campaignId = parts[0] ?? ''
+  const adGroupId  = parts[1] ?? ''
+
+  async function act(type: 'exclude' | 'add') {
+    setDoing(type); setErr(null)
+    try {
+      if (type === 'exclude') await onExclude(rec.term, campaignId, adGroupId, mt)
+      else                    await onAdd(rec.term, campaignId, adGroupId, mt)
+      setDone(type === 'exclude' ? `Excluded as ${mt.toLowerCase()}` : `Added as ${mt.toLowerCase()} keyword`)
+    } catch (e: any) { setErr(e.message) }
+    finally { setDoing(null) }
+  }
+
   return (
     <div className={`flex items-start gap-3 px-4 py-3.5 rounded-xl border ${cfg.bg} ${cfg.border}`}>
       <span className="text-base flex-shrink-0 mt-0.5">{cfg.icon}</span>
@@ -189,6 +218,53 @@ function RecCard({ rec, currency }: { rec: Rec; currency: string }) {
               ? `💰 ${currency} ${rec.impact.toFixed(2)} efficiency gain already achieved`
               : `⚠️ ${currency} ${rec.impact.toFixed(2)} ${rec.action === 'review' ? 'excess spend' : 'wasted spend'}`}
           </p>
+        )}
+
+        {/* Inline action strip */}
+        {done ? (
+          <p className="text-[11px] font-bold text-emerald-600 mt-2">✓ {done}</p>
+        ) : err ? (
+          <p className="text-[11px] text-red-600 mt-2">✗ {err}</p>
+        ) : (
+          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+            <select
+              value={mt}
+              onChange={e => setMt(e.target.value as MatchType)}
+              disabled={!!doing}
+              className="text-[10px] border border-cloud rounded-lg px-1.5 py-1 bg-white text-navy focus:outline-none focus:border-cyan disabled:opacity-40"
+            >
+              <option value="EXACT">Exact</option>
+              <option value="PHRASE">Phrase</option>
+              <option value="BROAD">Broad</option>
+            </select>
+            {rec.action !== 'promote' && (
+              <button
+                onClick={() => act('exclude')}
+                disabled={!!doing}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition-colors disabled:opacity-40 flex items-center gap-1"
+              >
+                {doing === 'exclude' ? <span className="inline-block w-3 h-3 border border-red-500 border-t-transparent rounded-full animate-spin" /> : '⊖'} Exclude
+              </button>
+            )}
+            {(rec.action === 'promote' || rec.action === 'review') && (
+              <button
+                onClick={() => act('add')}
+                disabled={!!doing}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors disabled:opacity-40 flex items-center gap-1"
+              >
+                {doing === 'add' ? <span className="inline-block w-3 h-3 border border-emerald-500 border-t-transparent rounded-full animate-spin" /> : '⊕'} Add Keyword
+              </button>
+            )}
+            {rec.action === 'exclude' && (
+              <button
+                onClick={() => act('add')}
+                disabled={!!doing}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-cloud text-navy/50 hover:bg-cloud transition-colors disabled:opacity-40 flex items-center gap-1"
+              >
+                {doing === 'add' ? <span className="inline-block w-3 h-3 border border-navy/40 border-t-transparent rounded-full animate-spin" /> : '⊕'} Add Keyword Instead
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -220,6 +296,13 @@ export function SearchTermsTab({
   const [sortDir,         setSortDir]         = useState<'asc' | 'desc'>('desc')
   const [page,            setPage]            = useState(1)
   const [copied,          setCopied]          = useState(false)
+
+  // Per-row inline action state
+  // openAction: which row + which action type has the match-type picker open
+  const [openAction, setOpenAction] = useState<{ termKey: string; type: 'exclude' | 'add' } | null>(null)
+  const [actionMt,   setActionMt]   = useState<MatchType>('EXACT')
+  const [rowPending, setRowPending] = useState<Set<string>>(new Set())
+  const [rowResults, setRowResults] = useState<Map<string, ActionResult>>(new Map())
 
   // Fetch data
   useEffect(() => {
@@ -333,6 +416,95 @@ export function SearchTermsTab({
     }).catch(() => {})
   }
 
+  // ── Shared action API handlers ─────────────────────────────────────────────
+  async function handleExclude(
+    term: string, termCampaignId: string, _adGroupId: string, matchType: MatchType
+  ) {
+    const res = await fetch('/api/negative-keywords', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_account_id: clientId,
+        campaign_id:       termCampaignId,
+        text:              term,
+        match_type:        matchType,
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error ?? 'Failed to exclude')
+    // Optimistically update status in terms list
+    setTerms(prev => prev.map(t =>
+      t.term === term && t.campaignId === termCampaignId
+        ? { ...t, status: 'EXCLUDED' }
+        : t
+    ))
+  }
+
+  async function handleAddKeyword(
+    term: string, _campaignId: string, adGroupId: string, matchType: MatchType
+  ) {
+    const res = await fetch('/api/add-keyword', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_account_id: clientId,
+        ad_group_id:       adGroupId,
+        text:              term,
+        match_type:        matchType,
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error ?? 'Failed to add keyword')
+    // Optimistically update status
+    setTerms(prev => prev.map(t =>
+      t.term === term && t.adGroupId === adGroupId
+        ? { ...t, status: t.status === 'EXCLUDED' ? 'ADDED_EXCLUDED' : 'ADDED' }
+        : t
+    ))
+  }
+
+  // ── Per-row inline action (table) ──────────────────────────────────────────
+  function openRowAction(termKey: string, type: 'exclude' | 'add') {
+    if (openAction?.termKey === termKey && openAction.type === type) {
+      setOpenAction(null)   // toggle off
+    } else {
+      setOpenAction({ termKey, type })
+      setActionMt('EXACT')
+    }
+  }
+
+  async function confirmRowAction(
+    term: string, termCampaignId: string, adGroupId: string
+  ) {
+    if (!openAction) return
+    const { termKey, type } = openAction
+    setOpenAction(null)
+    setRowPending(prev => { const s = Array.from(prev); s.push(termKey); return new Set(s) })
+    try {
+      if (type === 'exclude') await handleExclude(term, termCampaignId, adGroupId, actionMt)
+      else                    await handleAddKeyword(term, termCampaignId, adGroupId, actionMt)
+      setRowResults(prev => {
+        const m = new Map(prev)
+        m.set(termKey, {
+          type,
+          ok:  true,
+          msg: type === 'exclude'
+            ? `Excluded (${actionMt.toLowerCase()})`
+            : `Added as ${actionMt.toLowerCase()} keyword`,
+        })
+        return m
+      })
+    } catch (e: any) {
+      setRowResults(prev => {
+        const m = new Map(prev)
+        m.set(termKey, { type, ok: false, msg: e.message })
+        return m
+      })
+    } finally {
+      setRowPending(prev => { const s = Array.from(prev).filter(k => k !== termKey); return new Set(s) })
+    }
+  }
+
   // ─── Loading / error / empty states ────────────────────────────────────────
   if (loading) {
     return (
@@ -440,7 +612,16 @@ export function SearchTermsTab({
 
           {/* Rec cards */}
           <div className="p-4 space-y-2.5">
-            {topRecs.map(r => <RecCard key={r.key} rec={r} currency={currency} />)}
+            {topRecs.map(r => (
+              <RecCard
+                key={r.key}
+                rec={r}
+                currency={currency}
+                clientId={clientId}
+                onExclude={handleExclude}
+                onAdd={handleAddKeyword}
+              />
+            ))}
             {!recsExpanded && recs.length > 5 && (
               <button
                 onClick={() => setRecsExpanded(true)}
@@ -536,6 +717,7 @@ export function SearchTermsTab({
                 <th className="px-4 py-3 text-left text-[10px] font-heading font-bold uppercase tracking-wider text-teal">Campaign</th>
               )}
               <th className="px-4 py-3 text-left text-[10px] font-heading font-bold uppercase tracking-wider text-teal">Ad Group</th>
+              <th className="px-4 py-3 text-center text-[10px] font-heading font-bold uppercase tracking-wider text-teal whitespace-nowrap">Actions</th>
               {([
                 { col: 'impressions' as SortKey, label: 'Impr' },
                 { col: 'clicks'      as SortKey, label: 'Clicks' },
@@ -562,15 +744,19 @@ export function SearchTermsTab({
           <tbody className="divide-y divide-cloud">
             {visibleRows.length === 0 ? (
               <tr>
-                <td colSpan={campaignId ? 9 : 10} className="text-center py-12 text-teal text-sm">
+                <td colSpan={campaignId ? 10 : 11} className="text-center py-12 text-teal text-sm">
                   No terms match this filter.
                 </td>
               </tr>
             ) : visibleRows.map(t => {
-              const baseKey = `${t.campaignId}__${t.adGroupId}__${t.term}`
-              const rec     = recMap.get(baseKey)
-              const cfg     = rec ? REC_CFG[rec.priority] : null
-              const stsCfg  = STATUS_CFG[t.status] ?? STATUS_CFG.NONE
+              const baseKey   = `${t.campaignId}__${t.adGroupId}__${t.term}`
+              const rec       = recMap.get(baseKey)
+              const cfg       = rec ? REC_CFG[rec.priority] : null
+              const stsCfg    = STATUS_CFG[t.status] ?? STATUS_CFG.NONE
+              const isPending = rowPending.has(baseKey)
+              const result    = rowResults.get(baseKey)
+              const isOpen    = openAction?.termKey === baseKey
+              const alreadyActioned = t.status === 'EXCLUDED' || t.status === 'ADDED_EXCLUDED'
 
               return (
                 <tr
@@ -587,7 +773,7 @@ export function SearchTermsTab({
                     <p className="text-xs font-medium text-navy truncate" title={t.term}>{t.term}</p>
                   </td>
 
-                  {/* Status */}
+                  {/* Status — updates optimistically */}
                   <td className="px-3 py-3">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${stsCfg.bg} ${stsCfg.text}`}>
                       {stsCfg.label}
@@ -619,6 +805,73 @@ export function SearchTermsTab({
                   <td className={`px-4 py-3 text-right tabular-nums text-xs whitespace-nowrap ${t.cpa > 0 && avgs.cpa > 0 && t.cpa > avgs.cpa * 2 ? 'text-red-600 font-bold' : 'text-navy/80'}`}>
                     {t.cpa > 0 ? `${currency} ${t.cpa.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                   </td>
+
+                  {/* ── Actions cell ── */}
+                  <td className="px-3 py-2 text-center min-w-[160px]">
+                    {isPending ? (
+                      <div className="flex justify-center">
+                        <span className="inline-block w-4 h-4 border-2 border-cyan border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : result ? (
+                      <span className={`text-[10px] font-bold ${result.ok ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {result.ok ? '✓' : '✗'} {result.msg}
+                      </span>
+                    ) : isOpen ? (
+                      /* Match-type picker + confirm */
+                      <div className="flex items-center gap-1 justify-center flex-wrap">
+                        {(['EXACT','PHRASE','BROAD'] as MatchType[]).map(m => (
+                          <button
+                            key={m}
+                            onClick={() => setActionMt(m)}
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors ${
+                              actionMt === m
+                                ? openAction!.type === 'exclude'
+                                  ? 'bg-red-100 border-red-300 text-red-700'
+                                  : 'bg-emerald-100 border-emerald-300 text-emerald-700'
+                                : 'border-cloud text-navy/40 hover:border-cyan/40'
+                            }`}
+                          >
+                            {m[0] + m.slice(1).toLowerCase()}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => confirmRowAction(t.term, t.campaignId, t.adGroupId)}
+                          className={`text-[9px] font-bold px-2 py-0.5 rounded border transition-colors ${
+                            openAction!.type === 'exclude'
+                              ? 'bg-red-500 border-red-500 text-white hover:bg-red-600'
+                              : 'bg-emerald-500 border-emerald-500 text-white hover:bg-emerald-600'
+                          }`}
+                        >
+                          ✓
+                        </button>
+                        <button
+                          onClick={() => setOpenAction(null)}
+                          className="text-[9px] text-navy/30 hover:text-navy px-1 py-0.5"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      /* Default: two action buttons */
+                      <div className="flex items-center gap-1 justify-center">
+                        <button
+                          onClick={() => openRowAction(baseKey, 'exclude')}
+                          disabled={alreadyActioned}
+                          title="Exclude as negative keyword"
+                          className="text-[10px] font-bold px-2 py-1 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed whitespace-nowrap"
+                        >
+                          ⊖ Excl
+                        </button>
+                        <button
+                          onClick={() => openRowAction(baseKey, 'add')}
+                          title="Add as positive keyword"
+                          className="text-[10px] font-bold px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-100 transition-colors whitespace-nowrap"
+                        >
+                          ⊕ Add
+                        </button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               )
             })}
@@ -627,7 +880,7 @@ export function SearchTermsTab({
           {/* Totals footer */}
           <tfoot>
             <tr className="border-t-2 border-cloud/70 bg-mist">
-              <td colSpan={campaignId ? 4 : 5} className="px-4 py-3 text-[11px] font-heading font-bold text-navy">
+              <td colSpan={campaignId ? 5 : 6} className="px-4 py-3 text-[11px] font-heading font-bold text-navy">
                 Total · {filtered.length} term{filtered.length !== 1 ? 's' : ''}
               </td>
               <td className="px-4 py-3 text-right text-xs font-bold text-navy tabular-nums">{totals.impressions.toLocaleString()}</td>

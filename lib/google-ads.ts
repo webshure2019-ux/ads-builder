@@ -1778,7 +1778,8 @@ export async function getCampaignNegatives(
     .filter(n => n.text && n.criterionId)
 }
 
-const NEG_MATCH_TYPE_API: Record<string, number> = { EXACT: 4, PHRASE: 3, BROAD: 2 }
+const NEG_MATCH_TYPE_API: Record<string, number>  = { EXACT: 4, PHRASE: 3, BROAD: 2 }
+const KW_MATCH_TYPE_API:  Record<string, number>  = { EXACT: 4, PHRASE: 3, BROAD: 2 }
 
 export async function addCampaignNegative(
   clientAccountId: string,
@@ -1816,6 +1817,35 @@ export async function removeCampaignNegative(
   await (customer.campaignCriteria as any).remove([
     `customers/${cleanedClientId}/campaignCriteria/${campaignId}~${criterionId}`,
   ])
+}
+
+export async function addAdGroupKeyword(
+  clientAccountId: string,
+  adGroupId:       string,
+  text:            string,
+  matchType:       'EXACT' | 'PHRASE' | 'BROAD',
+  cpcBidMicros?:   number,
+): Promise<{ criterionId: string }> {
+  if (!CAMPAIGN_ID_RE.test(adGroupId)) throw new Error('Invalid ad_group_id')
+  if (!text.trim()) throw new Error('Keyword text is required')
+  if (!KW_MATCH_TYPE_API[matchType])  throw new Error('Invalid match type')
+
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer        = getClientCustomer(cleanedClientId)
+
+  const criterion: Record<string, any> = {
+    ad_group: `customers/${cleanedClientId}/adGroups/${adGroupId}`,
+    keyword:  { text: text.trim(), match_type: KW_MATCH_TYPE_API[matchType] },
+    status:   2, // ENABLED
+  }
+  if (cpcBidMicros && cpcBidMicros > 0) {
+    criterion.cpc_bid_micros = cpcBidMicros
+  }
+
+  const resp = await (customer.adGroupCriteria as any).create([criterion]) as any
+  const resource: string = resp?.results?.[0]?.resource_name ?? ''
+  const criterionId = resource.split('~')[1] ?? ''
+  return { criterionId }
 }
 
 // ─── Change History ───────────────────────────────────────────────────────────
