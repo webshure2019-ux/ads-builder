@@ -51,7 +51,7 @@ describe('extractRecommendations', () => {
   })
 
   it('throws when JSON is malformed', () => {
-    expect(() => extractRecommendations('[{bad json}')).toThrow()
+    expect(() => extractRecommendations('[{bad json}]')).toThrow(SyntaxError)
   })
 
   it('throws when [ appears after ]', () => {

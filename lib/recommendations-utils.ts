@@ -13,9 +13,16 @@ export function extractRecommendations(text: string): Recommendation[] {
     throw new Error('No JSON array found in Claude response')
   }
 
-  const parsed = JSON.parse(text.slice(start, end + 1)) as Omit<Recommendation, 'status'>[]
+  const parsed = JSON.parse(text.slice(start, end + 1))
 
-  return parsed.map((r, i) => ({
+  // Guard: JSON.parse succeeded but result is not an array
+  // (e.g. Claude returned a JSON object like {"error":"..."} that happened
+  // to have brackets in it — unlikely but possible)
+  if (!Array.isArray(parsed)) {
+    throw new Error('Claude response parsed but is not a JSON array')
+  }
+
+  return (parsed as Omit<Recommendation, 'status'>[]).map((r, i) => ({
     ...r,
     id:     r.id ?? `rec-${i}`,
     status: 'pending' as const,
