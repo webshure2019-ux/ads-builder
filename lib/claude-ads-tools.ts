@@ -98,15 +98,15 @@ export const ADS_TOOLS: Anthropic.Tool[] = [
 // ── Execute a tool call requested by Claude ───────────────────────────────────
 export async function executeTool(
   name: string,
-  input: Record<string, string>,
+  input: Record<string, unknown>,
 ): Promise<string> {
   try {
     switch (name) {
       case 'get_campaign_stats': {
         const campaigns = await getClientCampaigns(
-          input.client_account_id,
-          input.start_date,
-          input.end_date,
+          String(input.client_account_id),
+          String(input.start_date),
+          String(input.end_date),
         )
         return JSON.stringify(campaigns.map(c => ({
           id:                      c.id,
@@ -130,33 +130,33 @@ export async function executeTool(
       }
       case 'get_account_stats': {
         const stats = await getClientStats(
-          input.client_account_id,
-          input.start_date,
-          input.end_date,
+          String(input.client_account_id),
+          String(input.start_date),
+          String(input.end_date),
         )
         return JSON.stringify({ currency: stats.currency, totals: stats.totals, daily: stats.daily })
       }
       case 'get_search_terms': {
         return JSON.stringify(await getSearchTerms(
-          input.client_account_id,
-          input.campaign_id,
-          input.start_date,
-          input.end_date,
+          String(input.client_account_id),
+          String(input.campaign_id),
+          String(input.start_date),
+          String(input.end_date),
         ))
       }
       case 'get_keywords': {
         return JSON.stringify(await getKeywords(
-          input.client_account_id,
-          input.campaign_id,
-          input.start_date,
-          input.end_date,
+          String(input.client_account_id),
+          String(input.campaign_id),
+          String(input.start_date),
+          String(input.end_date),
         ))
       }
       case 'get_device_performance': {
         return JSON.stringify(await getDevicePerformance(
-          input.client_account_id,
-          input.start_date,
-          input.end_date,
+          String(input.client_account_id),
+          String(input.start_date),
+          String(input.end_date),
         ))
       }
       default:

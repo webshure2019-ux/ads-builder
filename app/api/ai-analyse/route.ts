@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
       toolUseBlocks.map(async block => ({
         type:        'tool_result' as const,
         tool_use_id: block.id,
-        content:     await executeTool(block.name, block.input as Record<string, string>),
+        content:     await executeTool(block.name, block.input as Record<string, unknown>),
       })),
     )
     messages.push({ role: 'user', content: toolResults })
