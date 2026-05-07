@@ -26,14 +26,82 @@ interface Props {
   currency:        string
 }
 
-// ── Recommendation card placeholder — replaced in Task 7 ─────────────────────
-function RecCard(_props: {
+function RecCard({
+  rec,
+  onApply,
+  onDismiss,
+  applying,
+  applyError,
+}: {
   rec:        Recommendation
   onApply:    (rec: Recommendation) => void
   onDismiss:  (id: string) => void
   applying:   boolean
   applyError: string | null
-}) { return null }
+}) {
+  const cat = CAT_META[rec.category] ?? { label: rec.category, cls: 'bg-cloud text-navy/50' }
+
+  return (
+    <div className="border border-cloud rounded-2xl p-4 bg-white hover:border-cyan/30 transition-all">
+      {/* Top row: priority + title + actions */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0 flex-1">
+          {/* Priority badge */}
+          <div className={`w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center text-[11px] font-bold mt-0.5 ${priorityCls(rec.priority)}`}>
+            {rec.priority}
+          </div>
+
+          <div className="min-w-0">
+            <p className="text-[13px] font-semibold text-navy leading-snug">{rec.title}</p>
+            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+              <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${cat.cls}`}>
+                {cat.label}
+              </span>
+              <span className="text-[9px] text-navy/40 bg-cloud px-2 py-0.5 rounded-full">
+                {rec.impact}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <button
+            onClick={() => onDismiss(rec.id)}
+            className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg bg-cloud text-navy/50 hover:bg-cloud/70 transition-colors"
+          >
+            Dismiss
+          </button>
+          {rec.applicable ? (
+            <button
+              onClick={() => onApply(rec)}
+              disabled={applying}
+              className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-teal text-white hover:opacity-90 disabled:opacity-50 transition-all"
+            >
+              {applying ? '…' : '✓ Apply'}
+            </button>
+          ) : (
+            <span className="text-[9px] font-medium px-2.5 py-1.5 rounded-lg bg-mist text-navy/35 border border-dashed border-cloud whitespace-nowrap">
+              Manual in Google Ads
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Reasoning */}
+      <p className="text-[11px] text-navy/55 leading-relaxed mt-3 pt-3 border-t border-cloud">
+        {rec.reasoning}
+      </p>
+
+      {/* Inline apply error */}
+      {applyError && (
+        <p className="text-[10px] text-red-600 mt-2 bg-red-50 px-3 py-1.5 rounded-lg border border-red-100">
+          Failed: {applyError}
+        </p>
+      )}
+    </div>
+  )
+}
 
 // ── Main component ─────────────────────────────────────────────────────────────
 export function RecommendationsSection({ clientAccountId, startDate, endDate }: Props) {
