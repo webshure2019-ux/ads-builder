@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
         await setCampaignBudget(
           client_account_id,
           String(action_data.budget_resource_name),
-          Number(action_data.new_daily_budget_micros),
+          Number(action_data.new_daily_budget),
         )
         break
 

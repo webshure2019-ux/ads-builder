@@ -29,8 +29,9 @@ action_type must be one of: pause_keyword | update_budget | add_negative | pause
 
 ACTION DATA RULES:
 - pause_keyword  → action_data: { keyword_id, ad_group_id, campaign_id } — set applicable: true
-- update_budget  → action_data: { campaign_id, new_daily_budget_micros } — set applicable: true
-  Micros = desired daily budget in account currency × 1,000,000 (e.g. $70.00 = 70000000)
+- update_budget  → action_data: { budget_resource_name, new_daily_budget } — set applicable: true
+  budget_resource_name comes from the campaign stats (e.g. "customers/123/campaignBudgets/456")
+  new_daily_budget is the desired daily budget in account currency units (e.g. 70.0 for $70, NOT micros)
 - add_negative   → action_data: { campaign_id, text, match_type } where match_type is EXACT, PHRASE, or BROAD — set applicable: true
 - pause_campaign → action_data: { campaign_id } — set applicable: true
 - manual         → action_data: {} — set applicable: false

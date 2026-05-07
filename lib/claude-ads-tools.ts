@@ -126,6 +126,7 @@ export async function executeTool(
           search_rank_lost_is:     c.search_rank_lost_is,
           search_budget_lost_is:   c.search_budget_lost_is,
           daily_budget:            c.daily_budget,
+          budget_resource_name:    c.budget_resource_name,
         })))
       }
       case 'get_account_stats': {
