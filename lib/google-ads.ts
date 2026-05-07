@@ -24,6 +24,14 @@ function validateDate(date: string, label: string): void {
   if (!DATE_RE.test(date)) throw new Error(`Invalid ${label} — expected YYYY-MM-DD`)
 }
 
+// ─── Multi-MCC routing ───────────────────────────────────────────────────────
+// When the user has access to multiple top-level MCCs (e.g. their primary MCC
+// + a "Leads Toolkit" MCC), each client account must be accessed via the MCC
+// that directly manages it.  listMccClients() discovers all accessible MCCs,
+// queries each one's full client hierarchy, and caches the correct
+// login_customer_id per client so getClientCustomer() routes transparently.
+const loginCustomerIdCache = new Map<string, string>()
+
 function getMccCustomer() {
   return makeClient().Customer({
     customer_id: cleanId(process.env.GOOGLE_ADS_MCC_CUSTOMER_ID!),
@@ -33,28 +41,78 @@ function getMccCustomer() {
 }
 
 function getClientCustomer(clientAccountId: string) {
+  const cleaned = cleanId(clientAccountId)
+  // Use the cached MCC for this account if known; fall back to the configured MCC
+  const loginId = loginCustomerIdCache.get(cleaned)
+    ?? cleanId(process.env.GOOGLE_ADS_MCC_CUSTOMER_ID!)
   return makeClient().Customer({
-    customer_id: cleanId(clientAccountId),
+    customer_id: cleaned,
     refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN!,
-    login_customer_id: cleanId(process.env.GOOGLE_ADS_MCC_CUSTOMER_ID!),
+    login_customer_id: loginId,
   })
 }
 
 export async function listMccClients(): Promise<{ id: string; name: string }[]> {
-  const customer = getMccCustomer()
-  const results = await customer.query(`
-    SELECT
-      customer_client.id,
-      customer_client.descriptive_name,
-      customer_client.status
-    FROM customer_client
-    WHERE customer_client.manager = false
-      AND customer_client.status = 'ENABLED'
-  `)
-  return results.map((r: any) => ({
-    id: String(r.customer_client.id),
-    name: r.customer_client.descriptive_name || `Account ${r.customer_client.id}`,
-  }))
+  const primaryMccId = cleanId(process.env.GOOGLE_ADS_MCC_CUSTOMER_ID!)
+
+  // ── Step 1: discover every MCC this credential can directly access ──────────
+  let accessibleMccIds: string[] = [primaryMccId]
+  try {
+    const response = await makeClient().listAccessibleCustomers(
+      process.env.GOOGLE_ADS_REFRESH_TOKEN!,
+    )
+    const resourceNames: string[] =
+      (response as any).resource_names ?? (response as any).resourceNames ?? []
+    const discovered = resourceNames
+      .map((rn: string) => rn.replace('customers/', '').replace(/-/g, ''))
+      .filter((id: string) => ACCOUNT_ID_RE.test(id))
+    // Merge discovered IDs with the configured primary (deduped)
+    accessibleMccIds = Array.from(new Set([primaryMccId, ...discovered]))
+  } catch {
+    // If discovery fails, fall back to the configured MCC only
+  }
+
+  // ── Step 2: query customer_client from every accessible MCC ─────────────────
+  const settled = await Promise.allSettled(
+    accessibleMccIds.map(async mccId => {
+      const customer = makeClient().Customer({
+        customer_id: mccId,
+        refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN!,
+        login_customer_id: mccId,
+      })
+      const rows = await customer.query(`
+        SELECT
+          customer_client.id,
+          customer_client.descriptive_name,
+          customer_client.status
+        FROM customer_client
+        WHERE customer_client.manager = false
+          AND customer_client.status = 'ENABLED'
+      `)
+      return (rows as any[]).map(r => ({
+        id:              String(r.customer_client.id),
+        name:            String(r.customer_client.descriptive_name || `Account ${r.customer_client.id}`),
+        loginCustomerId: mccId,
+      }))
+    }),
+  )
+
+  // ── Step 3: merge, deduplicate, and cache ────────────────────────────────────
+  const seen = new Set<string>()
+  const all:  { id: string; name: string }[] = []
+
+  for (const result of settled) {
+    if (result.status !== 'fulfilled') continue
+    for (const account of result.value) {
+      if (seen.has(account.id)) continue
+      seen.add(account.id)
+      all.push({ id: account.id, name: account.name })
+      // Cache so getClientCustomer routes through the right MCC
+      loginCustomerIdCache.set(account.id, account.loginCustomerId)
+    }
+  }
+
+  return all
 }
 
 export async function getKeywordSuggestions(
