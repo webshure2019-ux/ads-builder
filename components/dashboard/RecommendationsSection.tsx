@@ -76,6 +76,7 @@ function RecCard({
             <button
               onClick={() => onApply(rec)}
               disabled={applying}
+              aria-label={applying ? 'Applying…' : 'Apply recommendation'}
               className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-teal text-white hover:opacity-90 disabled:opacity-50 transition-all"
             >
               {applying ? '…' : '✓ Apply'}
@@ -104,7 +105,7 @@ function RecCard({
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
-export function RecommendationsSection({ clientAccountId, startDate, endDate }: Props) {
+export function RecommendationsSection({ clientAccountId, startDate, endDate, currency: _currency }: Props) {
   const [recs,        setRecs]        = useState<Recommendation[]>([])
   const [filter,      setFilter]      = useState('all')
   const [loading,     setLoading]     = useState(false)
