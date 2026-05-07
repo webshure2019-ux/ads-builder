@@ -253,6 +253,9 @@ All routes require the `ads-auth` cookie (via `requireAuth`). All return JSON.
 | `POST /api/publish` | POST | Publishes a complete campaign (Search or PMax) to Google Ads. |
 | `POST /api/scrape` | POST | Scrapes a landing page URL and returns extracted copy for AI input. |
 | `GET /api/clients` | GET | Lists all MCC child accounts (id + name). |
+| `POST /api/ai-analyse` | POST | AI-powered account analysis using Claude tool use. Body: `{ question, client_account_id, start_date, end_date }`. Claude autonomously calls up to 5 data tools (campaign stats, account stats, search terms, keywords, device performance) in an agentic loop, then returns a formatted analysis. Response: `{ answer, iterations }`. Capped at 8 tool-use iterations. |
+| `POST /api/recommendations` | POST | Claude tool-use loop returning a ranked `Recommendation[]` JSON array. Body: `{ client_account_id, start_date, end_date }`. Claude fetches campaign stats, keywords, search terms & device data via a tool-use loop, then returns up to 10 prioritised actions sorted by priority. Response: `{ recommendations, iterations }`. On parse failure returns 500. |
+| `POST /api/apply-recommendation` | POST | Executes a recommendation returned by `/api/recommendations`. Body: `{ action_type, action_data, client_account_id }`. Dispatches to existing Google Ads functions: `setKeywordStatus` (pause_keyword), `setCampaignBudget` (update_budget — requires `budget_resource_name` and `new_daily_budget` in standard currency), `addCampaignNegative` (add_negative), `setCampaignStatus` (pause_campaign). Returns `{ ok, error? }`. |
 
 ### Auth
 
@@ -324,6 +327,14 @@ All functions validate inputs before querying:
 2. **Query 2 (metrics):** Fetches `metrics.*` with `segments.date` or `segments.device` — scoped to the date range.
 
 Results are joined by `campaign_id` in a `Map`. See `getClientCampaigns()` for the canonical example.
+
+### `lib/claude-ads-tools.ts`
+
+Exports `ADS_TOOLS: Anthropic.Tool[]` (5 tool definitions: get_campaign_stats, get_account_stats, get_search_terms, get_keywords, get_device_performance) and `executeTool(name, input: Record<string, unknown>): Promise<string>`. Shared between `/api/ai-analyse` and `/api/recommendations`. Adding a new tool for Claude to call only requires a change in this one file. `get_campaign_stats` includes `budget_resource_name` in its trimmed output so Claude can populate `action_data` for budget-update recommendations.
+
+### `lib/recommendations-utils.ts`
+
+Exports `extractRecommendations(text: string): Recommendation[]`. Finds the first `[` and last `]` in Claude's text response and parses the JSON array, adding `status: 'pending'` to each item and a fallback `id` if missing. Validates that the parsed result is an array (throws if not). Tested in `__tests__/lib/recommendations-utils.test.ts`.
 
 ---
 
@@ -420,6 +431,14 @@ Lazy-loads on first expand. Fetches from `/api/change-history` (max 30-day windo
 - Text search across event descriptions
 - Expandable event rows showing old → new values
 - `formatDateTime()` helper converts Google Ads datetime string to locale format
+
+### `RecommendationsSection.tsx`
+
+Collects a ranked list of Claude-generated optimisation recommendations for the current client and date range. Account manager clicks "⚡ Generate Recommendations" → POST to `/api/recommendations` → Claude fetches live data and returns `Recommendation[]` sorted by priority. Each card shows: colour-coded priority badge (1–10), category badge, impact estimate, reasoning with real numbers, and either an **Apply** button (for applicable actions) or a **Manual in Google Ads** tag (for advisory-only). Applying calls `POST /api/apply-recommendation` and optimistically moves the card to the Done list. Dismissing moves the card to Done without an API call. Done cards collapse into a summary row at the bottom. Positioned above `ClientReportSection`. Filter chips computed dynamically from categories present in the current result set.
+
+### `AIAnalystSection.tsx`
+
+Ask-Claude panel that calls `POST /api/ai-analyse`. Five preset quick-questions plus a free-text input. Renders Claude's response through a lightweight markdown renderer (`InlineBold`, `AnswerBody`) that safely converts bold markers, bullets, and numbered lists into React elements. Shows a data-calls counter from the `iterations` field so users see how many tool fetches Claude made. Clears on demand. Placed above Client Report in the dashboard. Accepts `clientAccountId`, `startDate`, `endDate` props — no internal date management.
 
 ### `ClientReportSection.tsx`
 
