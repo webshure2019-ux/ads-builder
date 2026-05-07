@@ -15,6 +15,8 @@ import { LandingPageSection }       from '@/components/dashboard/LandingPageSect
 import { AnomalyAlertsSection }    from '@/components/dashboard/AnomalyAlertsSection'
 import { ChangeHistorySection }    from '@/components/dashboard/ChangeHistorySection'
 import { ClientReportSection }     from '@/components/dashboard/ClientReportSection'
+import { RecommendationsSection }  from '@/components/dashboard/RecommendationsSection'
+import { AIAnalystSection }        from '@/components/dashboard/AIAnalystSection'
 
 interface GoogleClient { id: string; name: string }
 
@@ -872,6 +874,27 @@ export function ClientDashboard() {
               clientAccountId={clientId}
               startDate={rs}
               endDate={re}
+            />
+          </div>
+
+          {/* ── AI Analyst ── */}
+          {clientId && rs && re && (
+            <div className="mt-2">
+              <AIAnalystSection
+                clientAccountId={clientId}
+                startDate={rs}
+                endDate={re}
+              />
+            </div>
+          )}
+
+          {/* ── Optimisation Recommendations ── */}
+          <div className="mt-2">
+            <RecommendationsSection
+              clientAccountId={clientId}
+              startDate={rs}
+              endDate={re}
+              currency={stats.currency}
             />
           </div>
 
