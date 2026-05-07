@@ -48,9 +48,8 @@ export async function listMccClients(): Promise<{ id: string; name: string }[]> 
       customer_client.descriptive_name,
       customer_client.status
     FROM customer_client
-    WHERE customer_client.level <= 1
+    WHERE customer_client.manager = false
       AND customer_client.status = 'ENABLED'
-      AND customer_client.id != ${cleanId(process.env.GOOGLE_ADS_MCC_CUSTOMER_ID!)}
   `)
   return results.map((r: any) => ({
     id: String(r.customer_client.id),
