@@ -27,10 +27,23 @@ function validateDate(date: string, label: string): void {
 // ─── Multi-MCC routing ───────────────────────────────────────────────────────
 // When the user has access to multiple top-level MCCs (e.g. their primary MCC
 // + a "Leads Toolkit" MCC), each client account must be accessed via the MCC
-// that directly manages it.  listMccClients() discovers all accessible MCCs,
-// queries each one's full client hierarchy, and caches the correct
-// login_customer_id per client so getClientCustomer() routes transparently.
+// that directly manages it.  getClientCustomer() auto-populates the cache on
+// first use (per serverless instance) so every API route routes correctly
+// regardless of call order — no dependency on /api/clients running first.
 const loginCustomerIdCache = new Map<string, string>()
+
+// Dedup guard: if multiple requests arrive simultaneously on a cold instance,
+// only one population run is made; the rest await the same promise.
+let _cachePopulating: Promise<void> | null = null
+
+async function ensureLoginCache(): Promise<void> {
+  if (loginCustomerIdCache.size > 0) return
+  if (_cachePopulating) return _cachePopulating
+  _cachePopulating = listMccClients()
+    .then(() => { _cachePopulating = null })
+    .catch(() => { _cachePopulating = null })
+  return _cachePopulating
+}
 
 function getMccCustomer() {
   return makeClient().Customer({
@@ -40,9 +53,10 @@ function getMccCustomer() {
   })
 }
 
-function getClientCustomer(clientAccountId: string) {
+async function getClientCustomer(clientAccountId: string) {
+  await ensureLoginCache()
   const cleaned = cleanId(clientAccountId)
-  // Use the cached MCC for this account if known; fall back to the configured MCC
+  // Use the cached MCC for this account; fall back to the configured MCC
   const loginId = loginCustomerIdCache.get(cleaned)
     ?? cleanId(process.env.GOOGLE_ADS_MCC_CUSTOMER_ID!)
   return makeClient().Customer({
@@ -165,7 +179,7 @@ export async function publishSearchCampaign(
   settings: CampaignSettingsData,
   adGroups: AdGroup[]
 ): Promise<string> {
-  const customer = getClientCustomer(clientAccountId)
+  const customer = await getClientCustomer(clientAccountId)
 
   const budgetResp = await customer.campaignBudgets.create([{
     name: `${name} Budget`,
@@ -280,7 +294,7 @@ export async function getClientStats(
   validateDate(endDate, 'end_date')
   if (startDate > endDate) throw new Error('start_date must be before end_date')
 
-  const customer = getClientCustomer(clientAccountId)
+  const customer = await getClientCustomer(clientAccountId)
 
   const results = await customer.query(`
     SELECT
@@ -384,7 +398,7 @@ export async function getClientCampaigns(
   validateDate(endDate, 'end_date')
   if (startDate > endDate) throw new Error('start_date must be before end_date')
 
-  const customer = getClientCustomer(clientAccountId)
+  const customer = await getClientCustomer(clientAccountId)
 
   // Three parallel queries — some fields are INCOMPATIBLE with segments.date in GAQL:
   //   • impression share metrics → separate unsegmented IS query
@@ -558,7 +572,7 @@ export async function getConversionBreakdown(
   validateDate(endDate,   'end_date')
   if (startDate > endDate) throw new Error('start_date must be before end_date')
 
-  const customer = getClientCustomer(clientAccountId)
+  const customer = await getClientCustomer(clientAccountId)
 
   // Query FROM campaign segmented by conversion action — this is the correct
   // way to get date-ranged conversion breakdown. FROM conversion_action does
@@ -651,7 +665,7 @@ export async function getAdGroups(
   validateCampaignId(campaignId)
   if (startDate > endDate) throw new Error('start_date must be before end_date')
 
-  const customer = getClientCustomer(clientAccountId)
+  const customer = await getClientCustomer(clientAccountId)
 
   const results = await customer.query(`
     SELECT
@@ -751,7 +765,7 @@ export async function getAds(
   if (adGroupId) validateCampaignId(adGroupId)
   if (startDate > endDate) throw new Error('start_date must be before end_date')
 
-  const customer = getClientCustomer(clientAccountId)
+  const customer = await getClientCustomer(clientAccountId)
 
   // Filter server-side by ad group when provided — avoids client-side ID comparison issues
   const adGroupFilter = adGroupId ? `\n      AND ad_group.id = ${adGroupId}` : ''
@@ -865,7 +879,7 @@ export async function getAssetGroups(
   validateCampaignId(campaignId)
   if (startDate > endDate) throw new Error('start_date must be before end_date')
 
-  const customer = getClientCustomer(clientAccountId)
+  const customer = await getClientCustomer(clientAccountId)
 
   const results = await customer.query(`
     SELECT
@@ -967,7 +981,7 @@ export async function getAdAssetPerformance(
   if (!CAMPAIGN_ID_RE.test(adId))      throw new Error('Invalid ad ID')
 
   const cleanedClientId = cleanId(clientAccountId)
-  const customer        = getClientCustomer(cleanedClientId)
+  const customer        = await getClientCustomer(cleanedClientId)
   // Resource name constructed from validated numeric IDs only
   const resourceName = `customers/${cleanedClientId}/adGroupAds/${adGroupId}~${adId}`
 
@@ -1009,7 +1023,7 @@ export async function updateRSA(
   for (const d of descriptions) if (d.length > 90) throw new Error(`Description exceeds 90 chars: "${d.slice(0,20)}…"`)
 
   const cleanedClientId = cleanId(clientAccountId)
-  const customer        = getClientCustomer(cleanedClientId)
+  const customer        = await getClientCustomer(cleanedClientId)
   const resourceName    = `customers/${cleanedClientId}/adGroupAds/${adGroupId}~${adId}`
 
   await (customer.adGroupAds as any).update([{
@@ -1036,7 +1050,7 @@ export async function setCampaignBudget(
   if (!Number.isFinite(dailyBudgetAmount) || dailyBudgetAmount <= 0) {
     throw new Error('Budget must be a positive number')
   }
-  const customer = getClientCustomer(clientAccountId)
+  const customer = await getClientCustomer(clientAccountId)
   await (customer.campaignBudgets as any).update([{
     resource_name:  budgetResourceName,
     amount_micros:  Math.round(dailyBudgetAmount * 1_000_000),
@@ -1053,7 +1067,7 @@ export async function setAdGroupStatus(
 ): Promise<void> {
   if (!CAMPAIGN_ID_RE.test(adGroupId)) throw new Error('Invalid ad group ID')
   const cleanedClientId = cleanId(clientAccountId)
-  const customer        = getClientCustomer(cleanedClientId)
+  const customer        = await getClientCustomer(cleanedClientId)
   await (customer.adGroups as any).update([{
     resource_name: `customers/${cleanedClientId}/adGroups/${adGroupId}`,
     status:        AD_GROUP_STATUS_MAP[status],
@@ -1072,7 +1086,7 @@ export async function setAdStatus(
   if (!CAMPAIGN_ID_RE.test(adGroupId)) throw new Error('Invalid ad group ID')
   if (!CAMPAIGN_ID_RE.test(adId))      throw new Error('Invalid ad ID')
   const cleanedClientId = cleanId(clientAccountId)
-  const customer        = getClientCustomer(cleanedClientId)
+  const customer        = await getClientCustomer(cleanedClientId)
   await (customer.adGroupAds as any).update([{
     resource_name: `customers/${cleanedClientId}/adGroupAds/${adGroupId}~${adId}`,
     status:        AD_STATUS_MAP[status],
@@ -1096,7 +1110,7 @@ export async function setCampaignStatus(
   // Validate that campaignId is a plain integer — never interpolated into GAQL
   if (!/^\d+$/.test(campaignId)) throw new Error(`Invalid campaign ID: ${campaignId}`)
 
-  const customer = getClientCustomer(cleanedClientId)
+  const customer = await getClientCustomer(cleanedClientId)
   const resourceName = `customers/${cleanedClientId}/campaigns/${campaignId}`
 
   await customer.campaigns.update([{
@@ -1129,7 +1143,7 @@ export async function cloneCampaign(
 ): Promise<string> {
   if (!/^\d+$/.test(sourceCampaignId)) throw new Error('Invalid campaign ID')
   const cleanedClientId = cleanId(clientAccountId)
-  const customer = getClientCustomer(cleanedClientId)
+  const customer = await getClientCustomer(cleanedClientId)
 
   // 1. Read source campaign config
   const rows = await customer.query(`
@@ -1241,7 +1255,7 @@ export async function getSearchTerms(
   if (startDate > endDate) throw new Error('start_date must be before end_date')
   if (campaignId) validateCampaignId(campaignId)
 
-  const customer       = getClientCustomer(clientAccountId)
+  const customer       = await getClientCustomer(clientAccountId)
   const campaignFilter = campaignId ? `\n      AND campaign.id = ${campaignId}` : ''
 
   const results = await customer.query(`
@@ -1363,7 +1377,7 @@ export async function getKeywords(
   if (startDate > endDate) throw new Error('start_date must be before end_date')
   if (campaignId) validateCampaignId(campaignId)
 
-  const customer       = getClientCustomer(clientAccountId)
+  const customer       = await getClientCustomer(clientAccountId)
   const campaignFilter = campaignId ? `\n      AND campaign.id = ${campaignId}` : ''
 
   // Two parallel queries — QS components are current-state snapshots and must
@@ -1507,7 +1521,7 @@ export async function setKeywordStatus(
   if (!CAMPAIGN_ID_RE.test(adGroupId))   throw new Error('Invalid ad group ID')
   if (!CAMPAIGN_ID_RE.test(criterionId)) throw new Error('Invalid criterion ID')
   const cleanedClientId = cleanId(clientAccountId)
-  const customer        = getClientCustomer(cleanedClientId)
+  const customer        = await getClientCustomer(cleanedClientId)
   await (customer.adGroupCriteria as any).update([{
     resource_name: `customers/${cleanedClientId}/adGroupCriteria/${adGroupId}~${criterionId}`,
     status:        KEYWORD_STATUS_API_MAP[status],
@@ -1544,7 +1558,7 @@ export async function getDevicePerformance(
   validateDate(startDate, 'start_date')
   validateDate(endDate, 'end_date')
   if (startDate > endDate) throw new Error('start_date must be before end_date')
-  const customer = getClientCustomer(clientAccountId)
+  const customer = await getClientCustomer(clientAccountId)
 
   const campaignFilter = campaignId ? `AND campaign.id = '${campaignId}'` : ''
   const rows = await customer.query(`
@@ -1627,7 +1641,7 @@ export async function getLandingPagePerformance(
   validateDate(startDate, 'start_date')
   validateDate(endDate, 'end_date')
   if (startDate > endDate) throw new Error('start_date must be before end_date')
-  const customer = getClientCustomer(clientAccountId)
+  const customer = await getClientCustomer(clientAccountId)
 
   const campaignFilter = campaignId ? `AND campaign.id = '${campaignId}'` : ''
   const rows = await customer.query(`
@@ -1740,7 +1754,7 @@ export async function getHourlyPerformance(
   if (startDate > endDate) throw new Error('start_date must be before end_date')
   if (campaignId) validateCampaignId(campaignId)
 
-  const customer       = getClientCustomer(clientAccountId)
+  const customer       = await getClientCustomer(clientAccountId)
   const campaignFilter = campaignId ? `\n      AND campaign.id = ${campaignId}` : ''
 
   const results = await customer.query(`
@@ -1806,7 +1820,7 @@ export async function getCampaignNegatives(
   campaignId?: string
 ): Promise<NegativeKeyword[]> {
   if (campaignId) validateCampaignId(campaignId)
-  const customer       = getClientCustomer(clientAccountId)
+  const customer       = await getClientCustomer(clientAccountId)
   const campaignFilter = campaignId ? `\n      AND campaign.id = ${campaignId}` : ''
 
   const results = await customer.query(`
@@ -1849,7 +1863,7 @@ export async function addCampaignNegative(
   if (!NEG_MATCH_TYPE_API[matchType]) throw new Error('Invalid match type')
 
   const cleanedClientId = cleanId(clientAccountId)
-  const customer        = getClientCustomer(cleanedClientId)
+  const customer        = await getClientCustomer(cleanedClientId)
 
   const resp = await (customer.campaignCriteria as any).create([{
     campaign:   `customers/${cleanedClientId}/campaigns/${campaignId}`,
@@ -1870,7 +1884,7 @@ export async function removeCampaignNegative(
   if (!CAMPAIGN_ID_RE.test(campaignId))  throw new Error('Invalid campaign ID')
   if (!CAMPAIGN_ID_RE.test(criterionId)) throw new Error('Invalid criterion ID')
   const cleanedClientId = cleanId(clientAccountId)
-  const customer        = getClientCustomer(cleanedClientId)
+  const customer        = await getClientCustomer(cleanedClientId)
   await (customer.campaignCriteria as any).remove([
     `customers/${cleanedClientId}/campaignCriteria/${campaignId}~${criterionId}`,
   ])
@@ -1888,7 +1902,7 @@ export async function addAdGroupKeyword(
   if (!KW_MATCH_TYPE_API[matchType])  throw new Error('Invalid match type')
 
   const cleanedClientId = cleanId(clientAccountId)
-  const customer        = getClientCustomer(cleanedClientId)
+  const customer        = await getClientCustomer(cleanedClientId)
 
   const criterion: Record<string, any> = {
     ad_group: `customers/${cleanedClientId}/adGroups/${adGroupId}`,
@@ -1954,7 +1968,7 @@ export async function getChangeHistory(
   validateDate(startDate, 'start_date')
   validateDate(endDate, 'end_date')
   if (startDate > endDate) throw new Error('start_date must be before end_date')
-  const customer = getClientCustomer(clientAccountId)
+  const customer = await getClientCustomer(clientAccountId)
 
   // change_event uses datetime ranges (not just dates)
   const startDt = `${startDate} 00:00:00`
@@ -2015,7 +2029,7 @@ export async function publishPMaxCampaign(
   settings: CampaignSettingsData,
   assets: GeneratedAssets
 ): Promise<string> {
-  const customer = getClientCustomer(clientAccountId)
+  const customer = await getClientCustomer(clientAccountId)
 
   const budgetResp = await customer.campaignBudgets.create([{
     name: `${name} Budget`,
