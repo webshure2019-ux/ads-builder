@@ -237,7 +237,10 @@ export function KeywordsTab({ clientId, startDate, endDate, currency, campaignId
   const poorCost = poor.reduce((s, k) => s + k.cost, 0)
 
   // ── Cannibalization detection ──────────────────────────────────────────────
-  // Flag same keyword text appearing in 2+ ad groups within the same campaign
+  // Flag same keyword text appearing in 2+ DISTINCT ad groups within the same
+  // campaign. The same keyword in one ad group with multiple match types
+  // produces separate rows (different criterionId) but is NOT cannibalization —
+  // deduplicate by adGroupId before counting.
   const canniMap = new Map<string, KeywordRow[]>()
   for (const k of keywords.filter(k => isKwEnabled(k.status))) {
     const key = `${k.campaignId}:${k.text.toLowerCase()}`
@@ -245,7 +248,17 @@ export function KeywordsTab({ clientId, startDate, endDate, currency, campaignId
     arr.push(k)
     canniMap.set(key, arr)
   }
-  const cannibalized = Array.from(canniMap.values()).filter(arr => arr.length > 1)
+  const cannibalized = Array.from(canniMap.values())
+    .map(arr => {
+      // Keep one representative row per distinct ad group
+      const seen = new Set<string>()
+      return arr.filter(k => {
+        if (seen.has(k.adGroupId)) return false
+        seen.add(k.adGroupId)
+        return true
+      })
+    })
+    .filter(arr => arr.length > 1)
 
   // ── QS distribution bar widths ────────────────────────────────────────────
   const total   = active.length || 1
