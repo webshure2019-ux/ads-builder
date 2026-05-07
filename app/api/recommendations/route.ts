@@ -6,7 +6,7 @@ import { extractRecommendations } from '@/lib/recommendations-utils'
 
 const client = new Anthropic()
 
-const SYSTEM_PROMPT = (accountId: string, startDate: string, endDate: string) => `\
+const buildSystemPrompt = (accountId: string, startDate: string, endDate: string) => `\
 You are a Google Ads optimisation expert analysing account ${accountId} for the period ${startDate} to ${endDate}.
 
 Your goal: fetch live account data using the available tools, then return ONLY a JSON array of prioritised recommendations. No prose, no markdown fences, no explanation — just the raw JSON array starting with [ and ending with ].
@@ -60,10 +60,12 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  const systemPrompt = buildSystemPrompt(client_account_id, start_date, end_date)
+
   const messages: Anthropic.MessageParam[] = [
     {
       role:    'user',
-      content: SYSTEM_PROMPT(client_account_id, start_date, end_date),
+      content: 'Analyse this account and return the recommendations JSON array.',
     },
   ]
 
@@ -71,11 +73,12 @@ export async function POST(request: NextRequest) {
     model:      'claude-opus-4-7',
     max_tokens: 4096,
     thinking:   { type: 'adaptive' },
+    system:     systemPrompt,
     tools:      ADS_TOOLS,
     messages,
   })
 
-  let iterations = 0
+  let iterations = 1
   while (response.stop_reason === 'tool_use' && iterations < 8) {
     iterations++
     const toolUseBlocks = response.content.filter(
@@ -94,9 +97,18 @@ export async function POST(request: NextRequest) {
       model:      'claude-opus-4-7',
       max_tokens: 4096,
       thinking:   { type: 'adaptive' },
+      system:     systemPrompt,
       tools:      ADS_TOOLS,
       messages,
     })
+  }
+
+  if (response.stop_reason === 'max_tokens') {
+    console.error('[/api/recommendations] Claude hit max_tokens mid-loop')
+    return NextResponse.json(
+      { error: 'Analysis exceeded token limit. Try a shorter date range.' },
+      { status: 500 },
+    )
   }
 
   const finalText = response.content
