@@ -3,7 +3,7 @@ import Image from 'next/image'
 import { ThemeToggle } from './ThemeToggle'
 
 interface NavProps {
-  page?: 'builder' | 'campaigns' | 'clients' | 'mcc'
+  page?: 'builder' | 'campaigns' | 'clients' | 'mcc' | 'changelog'
   action?: React.ReactNode
 }
 
