@@ -64,4 +64,13 @@ describe('GET /api/auction-insights', () => {
     expect(body).toHaveProperty('rows')
     expect(Array.isArray(body.rows)).toBe(true)
   })
+
+  it('returns 500 with error message when getAuctionInsights throws', async () => {
+    const { getAuctionInsights } = require('@/lib/google-ads')
+    getAuctionInsights.mockRejectedValueOnce(new Error('GAQL error'))
+    const res = await GET(makeReq(VALID))
+    expect(res.status).toBe(500)
+    const body = await res.json()
+    expect(body).toHaveProperty('error')
+  })
 })
