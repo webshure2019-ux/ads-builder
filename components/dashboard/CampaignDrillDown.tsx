@@ -10,6 +10,7 @@ import { RSACopyTab }               from '@/components/dashboard/RSACopyTab'
 import { ChangeHistorySection }    from '@/components/dashboard/ChangeHistorySection'
 import { ABTestingTab }            from '@/components/dashboard/ABTestingTab'
 import { AuctionInsightsTab }      from '@/components/dashboard/AuctionInsightsTab'
+import { LocationsTab }            from '@/components/dashboard/LocationsTab'
 
 // ─── Maps ──────────────────────────────────────────────────────────────────────
 const AD_TYPE_MAP: Record<string, string> = {
@@ -1181,7 +1182,7 @@ function AdsTab({ ads, currency, clientId, loading, error }: {
 }
 
 // ─── Main drill-down panel ─────────────────────────────────────────────────────
-type DrillTab = 'groups' | 'keywords' | 'negatives' | 'heatmap' | 'devices' | 'rsa_copy' | 'ab_test' | 'changes' | 'search_terms' | 'auction'
+type DrillTab = 'groups' | 'keywords' | 'negatives' | 'heatmap' | 'devices' | 'rsa_copy' | 'ab_test' | 'changes' | 'search_terms' | 'auction' | 'locations'
 
 interface Props {
   campaignId:   string
@@ -1273,6 +1274,7 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
           { id: 'changes'      as DrillTab, label: '📋 Changes'   },
           { id: 'search_terms' as DrillTab, label: '🔍 Search Terms' },
           { id: 'auction'      as DrillTab, label: '🏆 Auction', hidden: !isSearch },
+          { id: 'locations'    as DrillTab, label: '📍 Locations' },
         ]).filter(t => !(t as any).hidden).map(tab => (
           <button
             key={tab.id}
@@ -1373,6 +1375,14 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
             campaignId={campaignId}
             startDate={startDate}
             endDate={endDate}
+          />
+        ) : activeTab === 'locations' ? (
+          <LocationsTab
+            clientId={clientId}
+            campaignId={campaignId}
+            startDate={startDate}
+            endDate={endDate}
+            currency={currency}
           />
         ) : null
         }
