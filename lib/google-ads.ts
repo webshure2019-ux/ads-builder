@@ -2074,14 +2074,14 @@ export interface AuctionInsightRow {
 
 export async function getAuctionInsights(
   clientAccountId: string,
-  campaignId:       string,
-  startDate:        string,
-  endDate:          string,
+  campaignId: string,
+  startDate: string,
+  endDate: string,
 ): Promise<AuctionInsightRow[]> {
   validateDate(startDate, 'start_date')
   validateDate(endDate,   'end_date')
-  if (startDate > endDate) throw new Error('start_date must be before end_date')
   validateCampaignId(campaignId)
+  if (startDate > endDate) throw new Error('start_date must be before end_date')
 
   const customer = await getClientCustomer(clientAccountId)
 
