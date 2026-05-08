@@ -38,6 +38,7 @@ export function Nav({ page, action }: NavProps) {
           <Link href="/clients"  className={linkClass(page === 'clients')}>Clients</Link>
           <Link href="/campaigns"className={linkClass(page === 'campaigns')}>Campaigns</Link>
           <Link href="/mcc"      className={linkClass(page === 'mcc')}>MCC</Link>
+          <Link href="/changelog"className={linkClass(page === 'changelog')}>📋 What&apos;s New</Link>
         </div>
 
         {/* Spacer */}
