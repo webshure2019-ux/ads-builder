@@ -2111,3 +2111,222 @@ export async function getAuctionInsights(
     outRankingShare:   Math.round((r.metrics?.auction_insight_search_outranking_share    ?? 0) * 1000) / 10,
   }))
 }
+
+// ─── Location Targeting ───────────────────────────────────────────────────────
+export interface LocationTargetRow {
+  criterionId:   string   // campaign_criterion.criterion_id
+  geoTargetId:   string   // numeric ID extracted from geo_target_constant resource name
+  name:          string   // e.g. "Cape Town"
+  canonicalName: string   // e.g. "Cape Town, Western Cape, South Africa"
+  targetType:    string   // "City" | "Province" | "Country" | "Region" etc.
+  countryCode:   string   // "ZA" | "US" etc.
+  negative:      boolean  // true = excluded location
+  bidModifier:   number   // 1.0 = no adj, 1.2 = +20%, 0.8 = -20%
+  clicks:        number
+  impressions:   number
+  cost:          number   // in account currency units (not micros)
+  conversions:   number
+  convRate:      number   // 0-100 %
+  cpa:           number   // cost / conversions; 0 if no conversions
+  roas:          number   // conversions_value / cost; 0 if no cost
+}
+
+export interface GeoTargetResult {
+  id:            string
+  name:          string
+  canonicalName: string
+  countryCode:   string
+  targetType:    string
+}
+
+export async function getLocationTargets(
+  clientAccountId: string,
+  campaignId: string,
+  startDate: string,
+  endDate: string,
+): Promise<LocationTargetRow[]> {
+  validateDate(startDate, 'start_date')
+  validateDate(endDate, 'end_date')
+  validateCampaignId(campaignId)
+  if (startDate > endDate) throw new Error('start_date must be before end_date')
+
+  const customer = await getClientCustomer(clientAccountId)
+
+  // Query 1 — current-state targets (no date range, no segments)
+  const criteriaRows = await customer.query(`
+    SELECT
+      campaign_criterion.criterion_id,
+      campaign_criterion.location.geo_target_constant,
+      campaign_criterion.bid_modifier,
+      campaign_criterion.negative,
+      campaign_criterion.status
+    FROM campaign_criterion
+    WHERE campaign.id = ${campaignId}
+      AND campaign_criterion.type = 'LOCATION'
+      AND campaign_criterion.status != 'REMOVED'
+  `) as any[]
+
+  if (criteriaRows.length === 0) return []
+
+  // Query 2 — performance metrics (scoped to date range)
+  const perfRows = await customer.query(`
+    SELECT
+      location_view.targeting_location,
+      metrics.clicks,
+      metrics.impressions,
+      metrics.cost_micros,
+      metrics.conversions,
+      metrics.conversions_value
+    FROM location_view
+    WHERE campaign.id = ${campaignId}
+      AND segments.date BETWEEN '${startDate}' AND '${endDate}'
+  `) as any[]
+
+  // Build performance lookup: geo_target_constant resource name → metrics
+  const perfMap = new Map<string, any>()
+  for (const r of perfRows) {
+    const loc = String(r.location_view?.targeting_location ?? '')
+    if (loc) perfMap.set(loc, r.metrics)
+  }
+
+  // Query 3 — geo target names (global resource, use MCC customer)
+  const resourceNames = criteriaRows
+    .map(r => String(r.campaign_criterion?.location?.geo_target_constant ?? ''))
+    .filter(Boolean)
+  const uniqueNames = Array.from(new Set(resourceNames))
+  const inClause = uniqueNames.map(n => `'${n}'`).join(', ')
+
+  const geoRows = await getMccCustomer().query(`
+    SELECT
+      geo_target_constant.id,
+      geo_target_constant.name,
+      geo_target_constant.canonical_name,
+      geo_target_constant.country_code,
+      geo_target_constant.target_type
+    FROM geo_target_constant
+    WHERE geo_target_constant.resource_name IN (${inClause})
+  `) as any[]
+
+  const geoMap = new Map<string, any>()
+  for (const r of geoRows) {
+    const key = `geoTargetConstants/${r.geo_target_constant?.id}`
+    geoMap.set(key, r.geo_target_constant)
+  }
+
+  return criteriaRows.map(r => {
+    const geoKey     = String(r.campaign_criterion?.location?.geo_target_constant ?? '')
+    const geo        = geoMap.get(geoKey)
+    const perf       = perfMap.get(geoKey)
+    const clicks      = Number(perf?.clicks             ?? 0)
+    const impressions = Number(perf?.impressions         ?? 0)
+    const cost        = Number(perf?.cost_micros         ?? 0) / 1_000_000
+    const conversions = Number(perf?.conversions         ?? 0)
+    const convValue   = Number(perf?.conversions_value   ?? 0)
+    const geoId       = geoKey.replace('geoTargetConstants/', '')
+    return {
+      criterionId:   String(r.campaign_criterion?.criterion_id ?? ''),
+      geoTargetId:   geoId,
+      name:          String(geo?.name          ?? geoId),
+      canonicalName: String(geo?.canonical_name ?? geo?.name ?? geoId),
+      targetType:    String(geo?.target_type    ?? ''),
+      countryCode:   String(geo?.country_code   ?? ''),
+      negative:      Boolean(r.campaign_criterion?.negative),
+      bidModifier:   Number(r.campaign_criterion?.bid_modifier ?? 1.0),
+      clicks,
+      impressions,
+      cost,
+      conversions,
+      convRate:  clicks > 0 ? Math.round((conversions / clicks) * 10000) / 100 : 0,
+      cpa:       conversions > 0 ? Math.round((cost / conversions) * 100) / 100 : 0,
+      roas:      cost > 0 ? Math.round((convValue / cost) * 100) / 100 : 0,
+    }
+  })
+}
+
+export async function searchGeoTargets(query: string): Promise<GeoTargetResult[]> {
+  const q = query.trim()
+  if (!q) return []
+
+  // Numeric ID — return placeholder so user can add by ID directly
+  if (/^\d+$/.test(q)) {
+    return [{
+      id: q, name: `Location ID ${q}`, canonicalName: `Location ID ${q}`,
+      countryCode: '', targetType: 'Unknown',
+    }]
+  }
+
+  // Escape regex special characters before inserting into GAQL
+  const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+  const rows = await getMccCustomer().query(`
+    SELECT
+      geo_target_constant.id,
+      geo_target_constant.name,
+      geo_target_constant.canonical_name,
+      geo_target_constant.country_code,
+      geo_target_constant.target_type
+    FROM geo_target_constant
+    WHERE geo_target_constant.name REGEXP_MATCH '(?i).*${escaped}.*'
+      AND geo_target_constant.status = 'ENABLED'
+    LIMIT 10
+  `) as any[]
+
+  return rows.map(r => ({
+    id:            String(r.geo_target_constant?.id            ?? ''),
+    name:          String(r.geo_target_constant?.name          ?? ''),
+    canonicalName: String(r.geo_target_constant?.canonical_name ?? r.geo_target_constant?.name ?? ''),
+    countryCode:   String(r.geo_target_constant?.country_code  ?? ''),
+    targetType:    String(r.geo_target_constant?.target_type   ?? ''),
+  }))
+}
+
+export async function addLocationTarget(
+  clientAccountId: string,
+  campaignId: string,
+  geoTargetId: string,
+  negative = false,
+): Promise<{ criterionId: string }> {
+  validateCampaignId(campaignId)
+  if (!/^\d+$/.test(geoTargetId)) throw new Error('Invalid geo_target_id')
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer = await getClientCustomer(cleanedClientId)
+  const resp = await (customer.campaignCriteria as any).create([{
+    campaign: `customers/${cleanedClientId}/campaigns/${campaignId}`,
+    location: { geo_target_constant: `geoTargetConstants/${geoTargetId}` },
+    negative,
+  }]) as any
+  const resource: string = resp?.results?.[0]?.resource_name ?? ''
+  const criterionId = resource.split('~')[1] ?? ''
+  return { criterionId }
+}
+
+export async function removeLocationTarget(
+  clientAccountId: string,
+  campaignId: string,
+  criterionId: string,
+): Promise<void> {
+  validateCampaignId(campaignId)
+  if (!CAMPAIGN_ID_RE.test(criterionId)) throw new Error('Invalid criterion ID')
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer = await getClientCustomer(cleanedClientId)
+  await (customer.campaignCriteria as any).remove([
+    `customers/${cleanedClientId}/campaignCriteria/${campaignId}~${criterionId}`,
+  ])
+}
+
+export async function updateLocationBidModifier(
+  clientAccountId: string,
+  campaignId: string,
+  criterionId: string,
+  bidModifier: number,
+): Promise<void> {
+  validateCampaignId(campaignId)
+  if (!CAMPAIGN_ID_RE.test(criterionId)) throw new Error('Invalid criterion ID')
+  if (bidModifier < 0.1 || bidModifier > 10) throw new Error('bid_modifier must be between 0.1 and 10')
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer = await getClientCustomer(cleanedClientId)
+  await (customer.campaignCriteria as any).update([{
+    resource_name: `customers/${cleanedClientId}/campaignCriteria/${campaignId}~${criterionId}`,
+    bid_modifier:  bidModifier,
+  }])
+}
