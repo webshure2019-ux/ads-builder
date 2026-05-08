@@ -139,7 +139,7 @@ export async function getKeywordSuggestions(
       language: 'languageConstants/1000',
       geo_target_constants: ['geoTargetConstants/2710'],
       include_adult_keywords: false,
-      keyword_seed: { keywords: seedKeywords },
+      keyword_seed: { keywords: seedKeywords.slice(0, 20) },
     })
   )
 
