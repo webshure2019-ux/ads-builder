@@ -1272,7 +1272,7 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
           { id: 'ab_test'      as DrillTab, label: '🧪 A/B Test', hidden: isPMax },
           { id: 'changes'      as DrillTab, label: '📋 Changes'   },
           { id: 'search_terms' as DrillTab, label: '🔍 Search Terms' },
-          { id: 'auction'      as DrillTab, label: '🏆 Auction',     hidden: !isSearch },
+          { id: 'auction'      as DrillTab, label: '🏆 Auction', hidden: !isSearch },
         ]).filter(t => !(t as any).hidden).map(tab => (
           <button
             key={tab.id}
@@ -1367,14 +1367,15 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
             currency={currency}
             campaignId={campaignId}
           />
-        ) : (
+        ) : activeTab === 'auction' ? (
           <AuctionInsightsTab
             clientId={clientId}
             campaignId={campaignId}
             startDate={startDate}
             endDate={endDate}
           />
-        )}
+        ) : null
+        }
       </div>
     </div>
   )
