@@ -4,24 +4,29 @@ import { useState, useEffect } from 'react'
 import type { FeatureRequest } from '@/app/api/feature-requests/route'
 
 // ── Hardcoded changelog data ──────────────────────────────────────────────────
+// IMPORTANT: Add a new entry at the TOP of FEATURES or FIXES after every
+// feature ship or bug fix. Include the date ("8 May 2026") and time if known
+// ("~14:30 SAST"). Newest first always.
 
-const FEATURES: { emoji: string; text: string }[] = [
-  { emoji: '📍', text: 'Locations tab — view, edit, and optimise location targets per campaign' },
-  { emoji: '🏆', text: 'Auction Insights tab — competitor overlap analysis per campaign' },
-  { emoji: '🤖', text: 'AI Analyst — ask Claude questions about your account data' },
-  { emoji: '⚡', text: 'AI Recommendations — ranked optimisation suggestions with one-click apply' },
-  { emoji: '📋', text: 'Campaign clone & templates — duplicate campaigns and save reusable templates' },
-  { emoji: '🔍', text: 'Search terms inline actions — exclude or add as keyword without leaving the tab' },
-  { emoji: '➖', text: 'Negative keyword management — add and remove campaign-level negatives' },
-  { emoji: '🌐', text: 'MCC click-through — click any account in the MCC overview to open its dashboard' },
-  { emoji: '📊', text: 'A/B Test tab — statistical significance testing between ads' },
+const FEATURES: { emoji: string; text: string; date: string }[] = [
+  { emoji: '📍', text: 'Locations tab — view, edit, and optimise location targets per campaign',           date: '8 May 2026' },
+  { emoji: '📋', text: "What's New page — changelog + feature request form",                               date: '8 May 2026' },
+  { emoji: '🏆', text: 'Auction Insights tab — competitor overlap analysis per campaign',                  date: '7 May 2026' },
+  { emoji: '🤖', text: 'AI Analyst — ask Claude questions about your account data',                        date: '7 May 2026' },
+  { emoji: '⚡', text: 'AI Recommendations — ranked optimisation suggestions with one-click apply',        date: '7 May 2026' },
+  { emoji: '📋', text: 'Campaign clone & templates — duplicate campaigns and save reusable templates',     date: '6 May 2026' },
+  { emoji: '🔍', text: 'Search terms inline actions — exclude or add as keyword without leaving the tab', date: '6 May 2026' },
+  { emoji: '➖', text: 'Negative keyword management — add and remove campaign-level negatives',            date: '6 May 2026' },
+  { emoji: '🌐', text: 'MCC click-through — click any account in the MCC overview to open its dashboard', date: '5 May 2026' },
+  { emoji: '📊', text: 'A/B Test tab — statistical significance testing between ads',                      date: '5 May 2026' },
 ]
 
-const FIXES: string[] = [
-  'Fixed keyword seed limit error (capped at 20 items as required by Google Ads API)',
-  'Fixed campaign drill-down rendering bug (bare-else was activating on unknown tabs)',
-  'Fixed double-fetch in lazy-loaded section tabs (useRef guard now consistent)',
-  'Re-enabled Supabase project and enabled Row Level Security on clients and campaigns tables',
+const FIXES: { text: string; date: string }[] = [
+  { text: 'Fixed Locations tab error — gRPC errors from Google Ads now surface real details instead of a generic fallback message; location_view query failures (e.g. PMax) no longer crash the tab', date: '8 May 2026, ~14:30 SAST' },
+  { text: 'Fixed keyword seed limit error (capped at 20 items as required by Google Ads API)',           date: '7 May 2026' },
+  { text: 'Fixed campaign drill-down rendering bug (bare-else catch-all was activating on unknown tabs)', date: '7 May 2026' },
+  { text: 'Fixed double-fetch in lazy-loaded section tabs (useRef guard now consistent across tabs)',     date: '6 May 2026' },
+  { text: 'Re-enabled Supabase project; enabled Row Level Security on clients and campaigns tables',     date: '6 May 2026' },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -101,7 +106,8 @@ export function ChangelogContent() {
           {FEATURES.map(f => (
             <li key={f.text} className="flex items-start gap-2 text-sm text-[var(--text-1)]">
               <span className="mt-0.5 flex-shrink-0">{f.emoji}</span>
-              <span>{f.text}</span>
+              <span className="flex-1">{f.text}</span>
+              <span className="flex-shrink-0 text-[10px] text-[var(--text-2)] mt-0.5 whitespace-nowrap">{f.date}</span>
             </li>
           ))}
         </ul>
@@ -114,9 +120,10 @@ export function ChangelogContent() {
         </h2>
         <ul className="space-y-2">
           {FIXES.map(fix => (
-            <li key={fix} className="flex items-start gap-2 text-sm text-[var(--text-1)]">
+            <li key={fix.text} className="flex items-start gap-2 text-sm text-[var(--text-1)]">
               <span className="mt-0.5 flex-shrink-0 text-[var(--text-2)]">•</span>
-              <span>{fix}</span>
+              <span className="flex-1">{fix.text}</span>
+              <span className="flex-shrink-0 text-[10px] text-[var(--text-2)] mt-0.5 whitespace-nowrap">{fix.date}</span>
             </li>
           ))}
         </ul>
