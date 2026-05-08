@@ -2060,3 +2060,54 @@ export async function publishPMaxCampaign(
 
   return campaign.resource_name.split('/').pop() || ''
 }
+
+// ─── Auction Insights ─────────────────────────────────────────────────────────
+export interface AuctionInsightRow {
+  domain:            string   // competitor display domain; '' = this account
+  impressionShare:   number   // 0–100 %
+  overlapRate:       number   // 0–100 %
+  positionAboveRate: number   // 0–100 %
+  topOfPageRate:     number   // 0–100 %
+  absTopOfPageRate:  number   // 0–100 %
+  outRankingShare:   number   // 0–100 %
+}
+
+export async function getAuctionInsights(
+  clientAccountId: string,
+  campaignId:       string,
+  startDate:        string,
+  endDate:          string,
+): Promise<AuctionInsightRow[]> {
+  validateDate(startDate, 'start_date')
+  validateDate(endDate,   'end_date')
+  if (startDate > endDate) throw new Error('start_date must be before end_date')
+  validateCampaignId(campaignId)
+
+  const customer = await getClientCustomer(clientAccountId)
+
+  const results = await customer.query(`
+    SELECT
+      auction_insight.domain,
+      metrics.auction_insight_search_impression_share,
+      metrics.auction_insight_search_overlap_rate,
+      metrics.auction_insight_search_position_above_rate,
+      metrics.auction_insight_search_top_impression_percentage,
+      metrics.auction_insight_search_absolute_top_impression_percentage,
+      metrics.auction_insight_search_outranking_share
+    FROM auction_insight
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.id = ${campaignId}
+    ORDER BY metrics.auction_insight_search_impression_share DESC
+    LIMIT 25
+  `) as any[]
+
+  return results.map(r => ({
+    domain:            String(r.auction_insight?.domain ?? ''),
+    impressionShare:   Math.round((r.metrics?.auction_insight_search_impression_share   ?? 0) * 1000) / 10,
+    overlapRate:       Math.round((r.metrics?.auction_insight_search_overlap_rate        ?? 0) * 1000) / 10,
+    positionAboveRate: Math.round((r.metrics?.auction_insight_search_position_above_rate ?? 0) * 1000) / 10,
+    topOfPageRate:     Math.round((r.metrics?.auction_insight_search_top_impression_percentage            ?? 0) * 1000) / 10,
+    absTopOfPageRate:  Math.round((r.metrics?.auction_insight_search_absolute_top_impression_percentage   ?? 0) * 1000) / 10,
+    outRankingShare:   Math.round((r.metrics?.auction_insight_search_outranking_share    ?? 0) * 1000) / 10,
+  }))
+}
