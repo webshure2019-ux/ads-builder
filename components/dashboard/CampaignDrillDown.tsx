@@ -9,6 +9,7 @@ import { DevicePerformanceSection } from '@/components/dashboard/DevicePerforman
 import { RSACopyTab }               from '@/components/dashboard/RSACopyTab'
 import { ChangeHistorySection }    from '@/components/dashboard/ChangeHistorySection'
 import { ABTestingTab }            from '@/components/dashboard/ABTestingTab'
+import { AuctionInsightsTab }      from '@/components/dashboard/AuctionInsightsTab'
 
 // ─── Maps ──────────────────────────────────────────────────────────────────────
 const AD_TYPE_MAP: Record<string, string> = {
@@ -1180,7 +1181,7 @@ function AdsTab({ ads, currency, clientId, loading, error }: {
 }
 
 // ─── Main drill-down panel ─────────────────────────────────────────────────────
-type DrillTab = 'groups' | 'keywords' | 'negatives' | 'heatmap' | 'devices' | 'rsa_copy' | 'ab_test' | 'changes' | 'search_terms'
+type DrillTab = 'groups' | 'keywords' | 'negatives' | 'heatmap' | 'devices' | 'rsa_copy' | 'ab_test' | 'changes' | 'search_terms' | 'auction'
 
 interface Props {
   campaignId:   string
@@ -1195,6 +1196,7 @@ interface Props {
 
 export function CampaignDrillDown({ campaignId, campaignName, clientId, currency, startDate, endDate, channelType, onClose }: Props) {
   const isPMax = channelType === 'PERFORMANCE_MAX' || channelType === '10'
+  const isSearch = channelType === 'SEARCH' || channelType === '2'
 
   const [activeTab, setActiveTab] = useState<DrillTab>('groups')
 
@@ -1270,6 +1272,7 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
           { id: 'ab_test'      as DrillTab, label: '🧪 A/B Test', hidden: isPMax },
           { id: 'changes'      as DrillTab, label: '📋 Changes'   },
           { id: 'search_terms' as DrillTab, label: '🔍 Search Terms' },
+          { id: 'auction'      as DrillTab, label: '🏆 Auction',     hidden: !isSearch },
         ]).filter(t => !(t as any).hidden).map(tab => (
           <button
             key={tab.id}
@@ -1356,13 +1359,20 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
             campaignId={campaignId}
             campaignName={campaignName}
           />
-        ) : (
+        ) : activeTab === 'search_terms' ? (
           <SearchTermsTab
             clientId={clientId}
             startDate={startDate}
             endDate={endDate}
             currency={currency}
             campaignId={campaignId}
+          />
+        ) : (
+          <AuctionInsightsTab
+            clientId={clientId}
+            campaignId={campaignId}
+            startDate={startDate}
+            endDate={endDate}
           />
         )}
       </div>
