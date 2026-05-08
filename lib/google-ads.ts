@@ -2150,7 +2150,8 @@ export async function getLocationTargets(
   validateCampaignId(campaignId)
   if (startDate > endDate) throw new Error('start_date must be before end_date')
 
-  const customer = await getClientCustomer(clientAccountId)
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer        = await getClientCustomer(cleanedClientId)
 
   // Query 1 — current-state targets (no date range, no segments)
   const criteriaRows = await customer.query(`
@@ -2256,7 +2257,9 @@ export async function searchGeoTargets(query: string): Promise<GeoTargetResult[]
   }
 
   // Escape regex special characters before inserting into GAQL
-  const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const escaped = q
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/'/g, "\\'")
 
   const rows = await getMccCustomer().query(`
     SELECT
@@ -2287,7 +2290,7 @@ export async function addLocationTarget(
   negative = false,
 ): Promise<{ criterionId: string }> {
   validateCampaignId(campaignId)
-  if (!/^\d+$/.test(geoTargetId)) throw new Error('Invalid geo_target_id')
+  if (!CAMPAIGN_ID_RE.test(geoTargetId)) throw new Error('Invalid geo_target_id')
   const cleanedClientId = cleanId(clientAccountId)
   const customer = await getClientCustomer(cleanedClientId)
   const resp = await (customer.campaignCriteria as any).create([{
