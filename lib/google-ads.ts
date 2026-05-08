@@ -2170,24 +2170,29 @@ export async function getLocationTargets(
   if (criteriaRows.length === 0) return []
 
   // Query 2 — performance metrics (scoped to date range)
-  const perfRows = await customer.query(`
-    SELECT
-      location_view.targeting_location,
-      metrics.clicks,
-      metrics.impressions,
-      metrics.cost_micros,
-      metrics.conversions,
-      metrics.conversions_value
-    FROM location_view
-    WHERE campaign.id = ${campaignId}
-      AND segments.date BETWEEN '${startDate}' AND '${endDate}'
-  `) as any[]
-
-  // Build performance lookup: geo_target_constant resource name → metrics
+  // Wrapped in try/catch: some campaign types (e.g. PMax) don't support
+  // location_view, and the query may legitimately return no rows or error.
+  // On failure we log a warning and continue with zero metrics.
   const perfMap = new Map<string, any>()
-  for (const r of perfRows) {
-    const loc = String(r.location_view?.targeting_location ?? '')
-    if (loc) perfMap.set(loc, r.metrics)
+  try {
+    const perfRows = await customer.query(`
+      SELECT
+        location_view.targeting_location,
+        metrics.clicks,
+        metrics.impressions,
+        metrics.cost_micros,
+        metrics.conversions,
+        metrics.conversions_value
+      FROM location_view
+      WHERE campaign.id = ${campaignId}
+        AND segments.date BETWEEN '${startDate}' AND '${endDate}'
+    `) as any[]
+    for (const r of perfRows) {
+      const loc = String(r.location_view?.targeting_location ?? '')
+      if (loc) perfMap.set(loc, r.metrics)
+    }
+  } catch (perfErr: unknown) {
+    console.warn('[getLocationTargets] location_view query failed — returning zero metrics:', perfErr)
   }
 
   // Query 3 — geo target names (global resource, use MCC customer)

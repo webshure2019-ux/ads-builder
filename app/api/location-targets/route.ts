@@ -7,6 +7,19 @@ import {
   updateLocationBidModifier,
 } from '@/lib/google-ads'
 
+// Extract a human-readable message from any thrown value.
+// Google Ads API throws gRPC status objects that are not instanceof Error.
+function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'object' && err !== null) {
+    const obj = err as Record<string, unknown>
+    if (typeof obj.message === 'string') return obj.message
+    if (typeof obj.details === 'string') return obj.details
+    try { return JSON.stringify(err) } catch { /* ignore */ }
+  }
+  return fallback
+}
+
 const DATE_RE       = /^\d{4}-\d{2}-\d{2}$/
 const ACCOUNT_ID_RE = /^\d{8,12}$/
 const CAMPAIGN_RE   = /^\d+$/
@@ -34,8 +47,8 @@ export async function GET(request: NextRequest) {
     const rows = await getLocationTargets(clientId, campaignId, startDate, endDate)
     return NextResponse.json({ rows })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to load location targets'
-    console.error('[location-targets GET]', message)
+    const message = errorMessage(err, 'Failed to load location targets')
+    console.error('[location-targets GET]', err)
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
@@ -61,9 +74,9 @@ export async function POST(request: NextRequest) {
     const result = await addLocationTarget(clientId, String(campaign_id), String(geo_target_id), Boolean(negative))
     return NextResponse.json({ ok: true, criterionId: result.criterionId })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to add location'
+    const message = errorMessage(err, 'Failed to add location')
     const status = message.toLowerCase().includes('already') ? 409 : 500
-    console.error('[location-targets POST]', message)
+    console.error('[location-targets POST]', err)
     return NextResponse.json({ error: message }, { status })
   }
 }
@@ -89,8 +102,8 @@ export async function DELETE(request: NextRequest) {
     await removeLocationTarget(clientId, String(campaign_id), String(criterion_id))
     return NextResponse.json({ ok: true })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to remove location'
-    console.error('[location-targets DELETE]', message)
+    const message = errorMessage(err, 'Failed to remove location')
+    console.error('[location-targets DELETE]', err)
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
@@ -119,8 +132,8 @@ export async function PATCH(request: NextRequest) {
     await updateLocationBidModifier(clientId, String(campaign_id), String(criterion_id), bm)
     return NextResponse.json({ ok: true })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to update bid modifier'
-    console.error('[location-targets PATCH]', message)
+    const message = errorMessage(err, 'Failed to update bid modifier')
+    console.error('[location-targets PATCH]', err)
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
