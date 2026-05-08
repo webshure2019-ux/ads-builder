@@ -13,6 +13,33 @@ interface Props {
 
 function pct(n: number) { return `${n.toFixed(1)}%` }
 
+const SORT_LABEL: Record<SortKey, string> = {
+  impressionShare:   'Impr. Share',
+  overlapRate:       'Overlap',
+  positionAboveRate: 'Pos Above',
+  topOfPageRate:     'Top of Page',
+  absTopOfPageRate:  'Abs. Top',
+  outRankingShare:   'Outranking',
+}
+
+// ─── Module-level sub-component (avoids remount on every render) ──────────────
+function SortBtn({
+  col, sortKey, sortAsc, onToggle,
+}: { col: SortKey; sortKey: SortKey; sortAsc: boolean; onToggle: (k: SortKey) => void }) {
+  const active = sortKey === col
+  return (
+    <button
+      onClick={() => onToggle(col)}
+      className={`flex items-center gap-0.5 font-heading font-bold text-[10px] uppercase tracking-wider transition-colors ${
+        active ? 'text-cyan' : 'text-navy/50 hover:text-navy'
+      }`}
+    >
+      {SORT_LABEL[col]}
+      <span className="ml-0.5">{active ? (sortAsc ? '↑' : '↓') : '↕'}</span>
+    </button>
+  )
+}
+
 export function AuctionInsightsTab({ clientId, campaignId, startDate, endDate }: Props) {
   const [rows,    setRows]    = useState<AuctionInsightRow[]>([])
   const [loading, setLoading] = useState(false)
@@ -21,14 +48,17 @@ export function AuctionInsightsTab({ clientId, campaignId, startDate, endDate }:
   const [sortAsc, setSortAsc] = useState(false)
   const fetched = useRef('')
 
-  useEffect(() => {
+  function doFetch() {
     const key = `${campaignId}-${startDate}-${endDate}`
-    if (fetched.current === key) return
     fetched.current = key
     setLoading(true); setError('')
-    fetch(
-      `/api/auction-insights?client_account_id=${clientId}&campaign_id=${campaignId}&start_date=${startDate}&end_date=${endDate}`
-    )
+    const qs = new URLSearchParams({
+      client_account_id: clientId,
+      campaign_id:       campaignId,
+      start_date:        startDate,
+      end_date:          endDate,
+    })
+    fetch(`/api/auction-insights?${qs}`)
       .then(async r => {
         const d = await r.json()
         if (!r.ok) throw new Error(d.error ?? 'Failed to load')
@@ -36,36 +66,23 @@ export function AuctionInsightsTab({ clientId, campaignId, startDate, endDate }:
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [clientId, campaignId, startDate, endDate])
+  }
+
+  useEffect(() => {
+    const key = `${campaignId}-${startDate}-${endDate}`
+    if (fetched.current === key) return
+    doFetch()
+  }, [clientId, campaignId, startDate, endDate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortAsc(a => !a)
     else { setSortKey(key); setSortAsc(false) }
   }
 
-  function SortBtn({ col }: { col: SortKey }) {
-    const active = sortKey === col
-    return (
-      <button
-        onClick={() => toggleSort(col)}
-        className={`flex items-center gap-0.5 font-heading font-bold text-[10px] uppercase tracking-wider transition-colors ${
-          active ? 'text-cyan' : 'text-navy/50 hover:text-navy'
-        }`}
-      >
-        {col === 'impressionShare'    ? 'Impr. Share'
-         : col === 'overlapRate'      ? 'Overlap'
-         : col === 'positionAboveRate' ? 'Pos Above'
-         : col === 'topOfPageRate'    ? 'Top of Page'
-         : col === 'absTopOfPageRate' ? 'Abs. Top'
-         : 'Outranking'}
-        <span className="ml-0.5">{active ? (sortAsc ? '↑' : '↓') : '↕'}</span>
-      </button>
-    )
-  }
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12 text-navy/40 text-sm">
+      <div className="flex items-center justify-center gap-3 py-16 text-teal text-sm">
+        <div className="w-5 h-5 border-2 border-cyan border-t-transparent rounded-full animate-spin" />
         Loading auction insights…
       </div>
     )
@@ -73,15 +90,21 @@ export function AuctionInsightsTab({ clientId, campaignId, startDate, endDate }:
 
   if (error) {
     return (
-      <div className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-3">
+      <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-600 mt-4">
         {error}
+        <button
+          onClick={() => { setError(''); fetched.current = ''; doFetch() }}
+          className="ml-3 underline"
+        >
+          Retry
+        </button>
       </div>
     )
   }
 
   if (rows.length === 0) {
     return (
-      <div className="text-center py-12 text-navy/40">
+      <div className="text-center py-16 text-navy/40">
         <p className="text-2xl mb-2">🔍</p>
         <p className="text-sm">No auction insights data for this period.</p>
         <p className="text-xs mt-1 text-navy/30">
@@ -91,7 +114,7 @@ export function AuctionInsightsTab({ clientId, campaignId, startDate, endDate }:
     )
   }
 
-  // Sort: "You" row always pinned to top; competitors sorted by chosen column
+  // "You" row always pinned to top; competitors sorted by chosen column
   const youRow = rows.find(r => r.domain === '')
   const competitors = rows
     .filter(r => r.domain !== '')
@@ -114,12 +137,24 @@ export function AuctionInsightsTab({ clientId, campaignId, startDate, endDate }:
               <th className="text-left py-2 pr-4 font-heading font-bold text-[10px] uppercase tracking-wider text-navy/50 w-48">
                 Competitor
               </th>
-              <th className="py-2 px-3 text-right"><SortBtn col="impressionShare" /></th>
-              <th className="py-2 px-3 text-right"><SortBtn col="overlapRate" /></th>
-              <th className="py-2 px-3 text-right"><SortBtn col="positionAboveRate" /></th>
-              <th className="py-2 px-3 text-right"><SortBtn col="topOfPageRate" /></th>
-              <th className="py-2 px-3 text-right"><SortBtn col="absTopOfPageRate" /></th>
-              <th className="py-2 px-3 text-right"><SortBtn col="outRankingShare" /></th>
+              <th className="py-2 px-3 text-right">
+                <SortBtn col="impressionShare" sortKey={sortKey} sortAsc={sortAsc} onToggle={toggleSort} />
+              </th>
+              <th className="py-2 px-3 text-right">
+                <SortBtn col="overlapRate" sortKey={sortKey} sortAsc={sortAsc} onToggle={toggleSort} />
+              </th>
+              <th className="py-2 px-3 text-right">
+                <SortBtn col="positionAboveRate" sortKey={sortKey} sortAsc={sortAsc} onToggle={toggleSort} />
+              </th>
+              <th className="py-2 px-3 text-right">
+                <SortBtn col="topOfPageRate" sortKey={sortKey} sortAsc={sortAsc} onToggle={toggleSort} />
+              </th>
+              <th className="py-2 px-3 text-right">
+                <SortBtn col="absTopOfPageRate" sortKey={sortKey} sortAsc={sortAsc} onToggle={toggleSort} />
+              </th>
+              <th className="py-2 px-3 text-right">
+                <SortBtn col="outRankingShare" sortKey={sortKey} sortAsc={sortAsc} onToggle={toggleSort} />
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -177,7 +212,8 @@ export function AuctionInsightsTab({ clientId, campaignId, startDate, endDate }:
       <p className="text-[10px] text-navy/30 mt-3">
         <strong>Overlap:</strong> how often a competitor&apos;s ad showed alongside yours ·{' '}
         <strong>Pos Above:</strong> how often they ranked above you ·{' '}
-        <strong>Outranking:</strong> how often you ranked above them
+        <strong>Outranking:</strong> how often you ranked above them ·{' '}
+        <span className="text-navy/20">— = not applicable for your account</span>
       </p>
     </div>
   )
