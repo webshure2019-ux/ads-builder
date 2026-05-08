@@ -133,7 +133,7 @@ export function LocationsTab({ clientId, campaignId, startDate, endDate, currenc
         if (!r.ok) throw new Error(d.error ?? 'Failed to load')
         setRows(d.rows ?? [])
       })
-      .catch(e => setError(String(e)))
+      .catch(e => { fetched.current = ''; setError(String(e)) })
       .finally(() => setLoading(false))
   }
 
@@ -205,6 +205,7 @@ export function LocationsTab({ clientId, campaignId, startDate, endDate, currenc
     } catch (e: unknown) {
       setMutErr(e instanceof Error ? e.message : String(e))
       doFetch()
+      throw e
     }
   }
 
