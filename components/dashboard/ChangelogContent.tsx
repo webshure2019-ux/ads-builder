@@ -51,7 +51,7 @@ export function ChangelogContent() {
         if (!r.ok) throw new Error(d.error ?? 'Failed to load')
         setRequests(d.requests ?? [])
       })
-      .catch(e => setFetchError(String(e)))
+      .catch(e => setFetchError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoadingReqs(false))
   }, [])
 
