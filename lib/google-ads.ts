@@ -2087,7 +2087,7 @@ export async function getAuctionInsights(
 
   const results = await customer.query(`
     SELECT
-      auction_insight.domain,
+      segments.auction_insight_domain,
       metrics.auction_insight_search_impression_share,
       metrics.auction_insight_search_overlap_rate,
       metrics.auction_insight_search_position_above_rate,
@@ -2102,7 +2102,7 @@ export async function getAuctionInsights(
   `) as any[]
 
   return results.map(r => ({
-    domain:            String(r.auction_insight?.domain ?? ''),
+    domain:            String(r.segments?.auction_insight_domain ?? ''),
     impressionShare:   Math.round((r.metrics?.auction_insight_search_impression_share   ?? 0) * 1000) / 10,
     overlapRate:       Math.round((r.metrics?.auction_insight_search_overlap_rate        ?? 0) * 1000) / 10,
     positionAboveRate: Math.round((r.metrics?.auction_insight_search_position_above_rate ?? 0) * 1000) / 10,

@@ -22,6 +22,7 @@ const FEATURES: { emoji: string; text: string; date: string }[] = [
 ]
 
 const FIXES: { text: string; date: string }[] = [
+  { text: 'Fixed Auction Insights tab — api field auction_insight.domain was removed in Google Ads API v23; now correctly reads from segments.auction_insight_domain', date: '8 May 2026, ~15:00 SAST' },
   { text: 'Fixed Locations tab error — gRPC errors from Google Ads now surface real details instead of a generic fallback message; location_view query failures (e.g. PMax) no longer crash the tab', date: '8 May 2026, ~14:30 SAST' },
   { text: 'Fixed keyword seed limit error (capped at 20 items as required by Google Ads API)',           date: '7 May 2026' },
   { text: 'Fixed campaign drill-down rendering bug (bare-else catch-all was activating on unknown tabs)', date: '7 May 2026' },
