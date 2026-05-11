@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
 import { getClientStats } from '@/lib/google-ads'
+import { googleAdsErrorMessage } from '@/lib/error-utils'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(stats)
   } catch (error) {
     console.error('[/api/stats]', error)
-    // Don't leak internal error details to client
-    return NextResponse.json({ error: 'Failed to fetch stats' }, { status: 500 })
+    const message = googleAdsErrorMessage(error, 'Failed to fetch stats')
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

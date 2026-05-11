@@ -6,19 +6,7 @@ import {
   removeLocationTarget,
   updateLocationBidModifier,
 } from '@/lib/google-ads'
-
-// Extract a human-readable message from any thrown value.
-// Google Ads API throws gRPC status objects that are not instanceof Error.
-function errorMessage(err: unknown, fallback: string): string {
-  if (err instanceof Error) return err.message
-  if (typeof err === 'object' && err !== null) {
-    const obj = err as Record<string, unknown>
-    if (typeof obj.message === 'string') return obj.message
-    if (typeof obj.details === 'string') return obj.details
-    try { return JSON.stringify(err) } catch { /* ignore */ }
-  }
-  return fallback
-}
+import { googleAdsErrorMessage as errorMessage } from '@/lib/error-utils'
 
 const DATE_RE       = /^\d{4}-\d{2}-\d{2}$/
 const ACCOUNT_ID_RE = /^\d{8,12}$/

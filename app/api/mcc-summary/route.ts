@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
 import { listMccClients, getClientStats, getClientCampaigns } from '@/lib/google-ads'
+import { googleAdsErrorMessage } from '@/lib/error-utils'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -72,8 +73,9 @@ export async function GET(request: NextRequest) {
       .length
 
     return NextResponse.json({ accounts, failed, total: clients.length })
-  } catch (err: any) {
-    console.error('[mcc-summary]', err?.message ?? err)
-    return NextResponse.json({ error: err.message ?? 'Failed to load MCC summary' }, { status: 500 })
+  } catch (err: unknown) {
+    console.error('[mcc-summary]', err)
+    const message = googleAdsErrorMessage(err, 'Failed to load MCC summary')
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
