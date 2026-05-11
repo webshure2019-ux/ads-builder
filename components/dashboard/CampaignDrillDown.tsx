@@ -11,6 +11,7 @@ import { ChangeHistorySection }    from '@/components/dashboard/ChangeHistorySec
 import { ABTestingTab }            from '@/components/dashboard/ABTestingTab'
 import { AuctionInsightsTab }      from '@/components/dashboard/AuctionInsightsTab'
 import { LocationsTab }            from '@/components/dashboard/LocationsTab'
+import { AssetsTab }               from '@/components/dashboard/AssetsTab'
 
 // ─── Maps ──────────────────────────────────────────────────────────────────────
 const AD_TYPE_MAP: Record<string, string> = {
@@ -1182,7 +1183,7 @@ function AdsTab({ ads, currency, clientId, loading, error }: {
 }
 
 // ─── Main drill-down panel ─────────────────────────────────────────────────────
-type DrillTab = 'groups' | 'keywords' | 'negatives' | 'heatmap' | 'devices' | 'rsa_copy' | 'ab_test' | 'changes' | 'search_terms' | 'auction' | 'locations'
+type DrillTab = 'groups' | 'keywords' | 'negatives' | 'heatmap' | 'devices' | 'rsa_copy' | 'ab_test' | 'changes' | 'search_terms' | 'auction' | 'locations' | 'assets'
 
 interface Props {
   campaignId:   string
@@ -1275,6 +1276,7 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
           { id: 'search_terms' as DrillTab, label: '🔍 Search Terms' },
           { id: 'auction'      as DrillTab, label: '🏆 Auction', hidden: !isSearch },
           { id: 'locations'    as DrillTab, label: '📍 Locations' },
+          { id: 'assets'       as DrillTab, label: '🔗 Assets'   },
         ]).filter(t => !(t as any).hidden).map(tab => (
           <button
             key={tab.id}
@@ -1380,6 +1382,15 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
           <LocationsTab
             clientId={clientId}
             campaignId={campaignId}
+            startDate={startDate}
+            endDate={endDate}
+            currency={currency}
+          />
+        ) : activeTab === 'assets' ? (
+          <AssetsTab
+            clientId={clientId}
+            campaignId={campaignId}
+            channelType={channelType}
             startDate={startDate}
             endDate={endDate}
             currency={currency}

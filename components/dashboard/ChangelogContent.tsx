@@ -9,6 +9,7 @@ import type { FeatureRequest } from '@/app/api/feature-requests/route'
 // ("~14:30 SAST"). Newest first always.
 
 const FEATURES: { emoji: string; text: string; date: string }[] = [
+  { emoji: '🔗', text: 'Assets tab — view, add, edit, and remove all ad extensions per campaign; full PMax asset group management with performance labels', date: '11 May 2026' },
   { emoji: '📍', text: 'Locations tab — view, edit, and optimise location targets per campaign',           date: '8 May 2026' },
   { emoji: '📋', text: "What's New page — changelog + feature request form",                               date: '8 May 2026' },
   { emoji: '🏆', text: 'Auction Insights tab — competitor overlap analysis per campaign',                  date: '7 May 2026' },

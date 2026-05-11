@@ -2338,3 +2338,504 @@ export async function updateLocationBidModifier(
     bid_modifier:  bidModifier,
   }])
 }
+
+// ─── Assets (ad extensions) ───────────────────────────────────────────────────
+
+export type AssetType =
+  | 'SITELINK' | 'CALLOUT' | 'CALL' | 'STRUCTURED_SNIPPET'
+  | 'IMAGE' | 'PROMOTION' | 'PRICE' | 'LEAD_FORM'
+
+export type AssetLevel = 'ACCOUNT' | 'CAMPAIGN'
+
+export interface PriceItem {
+  header:        string
+  description:   string
+  priceValue:    number
+  priceCurrency: string
+  unit:          string
+  finalUrls:     string[]
+}
+
+export interface AssetRow {
+  assetId:   string
+  fieldType: number   // numeric AssetFieldType — needed for detach resource name
+  assetType: AssetType
+  level:     AssetLevel
+  status:    string
+  sitelink?:          { linkText: string; description1: string; description2: string; finalUrls: string[] }
+  callout?:           { text: string }
+  call?:              { phoneNumber: string; countryCode: string }
+  structuredSnippet?: { header: string; values: string[] }
+  image?:             { url: string; mimeType: string }
+  promotion?:         { target: string; percentOff: number; promotionCode: string; startDate: string; endDate: string; finalUrls: string[] }
+  price?:             { type: string; qualifier: string; items: PriceItem[] }
+  leadForm?:          { headline: string; businessName: string; privacyPolicyUrl: string }
+  clicks:      number
+  impressions: number
+  cost:        number
+  ctr:         number
+}
+
+export interface PMaxAssetRow {
+  assetId:          string
+  assetGroupId:     string
+  fieldType:        string
+  performanceLabel: string
+  status:           string
+  text?:     string
+  imageUrl?: string
+  videoId?:  string
+}
+
+// AssetFieldType enum values (google-ads-api v23)
+const FIELD_TYPE: Record<AssetType, number> = {
+  SITELINK:           13,
+  CALLOUT:            11,
+  CALL:               16,
+  STRUCTURED_SNIPPET: 12,
+  IMAGE:               5,  // MARKETING_IMAGE
+  PROMOTION:          10,
+  PRICE:              24,
+  LEAD_FORM:           9,
+}
+
+const FIELD_TYPE_TO_ASSET_TYPE: Record<number, AssetType> = {
+  13: 'SITELINK',
+  11: 'CALLOUT',
+  16: 'CALL',
+  12: 'STRUCTURED_SNIPPET',
+   5: 'IMAGE',
+  10: 'PROMOTION',
+  24: 'PRICE',
+   9: 'LEAD_FORM',
+}
+
+// AssetType enum values (google-ads-api v23)
+const ASSET_TYPE_NUM: Record<AssetType, number> = {
+  SITELINK:           11,
+  CALLOUT:             9,
+  CALL:               16,
+  STRUCTURED_SNIPPET: 10,
+  IMAGE:               4,
+  PROMOTION:           8,
+  PRICE:              17,
+  LEAD_FORM:           6,
+}
+
+function mapAssetRow(r: any, level: AssetLevel, metricsMap: Map<string, any>): AssetRow | null {
+  const assetId   = String(r.asset?.id ?? '')
+  const link      = level === 'CAMPAIGN' ? r.campaign_asset : r.customer_asset
+  const fieldTypeNum = link?.field_type as number
+  const assetType = FIELD_TYPE_TO_ASSET_TYPE[fieldTypeNum]
+  if (!assetType || !assetId) return null
+
+  const met = metricsMap.get(assetId)
+  const row: AssetRow = {
+    assetId,
+    fieldType: fieldTypeNum,
+    assetType,
+    level,
+    status:     String(link?.status ?? 'ENABLED'),
+    clicks:      Number(met?.metrics?.clicks      ?? 0),
+    impressions: Number(met?.metrics?.impressions ?? 0),
+    cost:        Number(met?.metrics?.cost_micros ?? 0) / 1_000_000,
+    ctr:         Number(met?.metrics?.ctr         ?? 0),
+  }
+
+  switch (assetType) {
+    case 'SITELINK':
+      row.sitelink = {
+        linkText:     String(r.asset?.sitelink_asset?.link_text   ?? ''),
+        description1: String(r.asset?.sitelink_asset?.description1 ?? ''),
+        description2: String(r.asset?.sitelink_asset?.description2 ?? ''),
+        finalUrls:    (r.asset?.final_urls ?? []).map(String),
+      }; break
+    case 'CALLOUT':
+      row.callout = { text: String(r.asset?.callout_asset?.callout_text ?? '') }; break
+    case 'CALL':
+      row.call = {
+        phoneNumber: String(r.asset?.call_asset?.phone_number ?? ''),
+        countryCode: String(r.asset?.call_asset?.country_code ?? ''),
+      }; break
+    case 'STRUCTURED_SNIPPET':
+      row.structuredSnippet = {
+        header: String(r.asset?.structured_snippet_asset?.header ?? ''),
+        values: (r.asset?.structured_snippet_asset?.values ?? []).map(String),
+      }; break
+    case 'IMAGE':
+      row.image = {
+        url:      String(r.asset?.image_asset?.full_size?.url ?? ''),
+        mimeType: String(r.asset?.image_asset?.mime_type ?? ''),
+      }; break
+    case 'PROMOTION':
+      row.promotion = {
+        target:        String(r.asset?.promotion_asset?.promotion_target ?? ''),
+        percentOff:    Number(r.asset?.promotion_asset?.percent_off      ?? 0) / 1_000_000,
+        promotionCode: String(r.asset?.promotion_asset?.promotion_code   ?? ''),
+        startDate:     String(r.asset?.promotion_asset?.start_date       ?? ''),
+        endDate:       String(r.asset?.promotion_asset?.end_date         ?? ''),
+        finalUrls:     (r.asset?.final_urls ?? []).map(String),
+      }; break
+    case 'PRICE':
+      row.price = {
+        type:      String(r.asset?.price_asset?.type            ?? ''),
+        qualifier: String(r.asset?.price_asset?.price_qualifier ?? ''),
+        items:     (r.asset?.price_asset?.price_offerings ?? []).map((item: any) => ({
+          header:        String(item.header ?? ''),
+          description:   String(item.description ?? ''),
+          priceValue:    Number(item.price?.amount_micros ?? 0) / 1_000_000,
+          priceCurrency: String(item.price?.currency_code ?? ''),
+          unit:          String(item.unit ?? ''),
+          finalUrls:     (item.final_urls ?? []).map(String),
+        })),
+      }; break
+    case 'LEAD_FORM':
+      row.leadForm = {
+        headline:         String(r.asset?.lead_form_asset?.headline          ?? ''),
+        businessName:     String(r.asset?.lead_form_asset?.business_name     ?? ''),
+        privacyPolicyUrl: String(r.asset?.lead_form_asset?.privacy_policy_url ?? ''),
+      }; break
+  }
+  return row
+}
+
+const ASSET_SELECT = `
+  asset.id,
+  asset.type,
+  asset.final_urls,
+  asset.sitelink_asset.link_text,
+  asset.sitelink_asset.description1,
+  asset.sitelink_asset.description2,
+  asset.callout_asset.callout_text,
+  asset.call_asset.phone_number,
+  asset.call_asset.country_code,
+  asset.structured_snippet_asset.header,
+  asset.structured_snippet_asset.values,
+  asset.image_asset.full_size.url,
+  asset.image_asset.mime_type,
+  asset.promotion_asset.promotion_target,
+  asset.promotion_asset.percent_off,
+  asset.promotion_asset.promotion_code,
+  asset.promotion_asset.start_date,
+  asset.promotion_asset.end_date,
+  asset.price_asset.type,
+  asset.price_asset.price_qualifier,
+  asset.lead_form_asset.headline,
+  asset.lead_form_asset.business_name,
+  asset.lead_form_asset.privacy_policy_url`.trim()
+
+export async function getAssets(
+  clientAccountId: string,
+  campaignId: string,
+  startDate: string,
+  endDate: string,
+): Promise<AssetRow[]> {
+  validateCampaignId(campaignId)
+  validateDate(startDate, 'start_date')
+  validateDate(endDate, 'end_date')
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer = await getClientCustomer(cleanedClientId)
+
+  // Query 1a — campaign-level asset structure (no date range)
+  const campaignRows = await customer.query(`
+    SELECT ${ASSET_SELECT},
+      campaign_asset.field_type,
+      campaign_asset.status
+    FROM campaign_asset
+    WHERE campaign.id = ${campaignId}
+      AND campaign_asset.status != 'REMOVED'
+  `)
+
+  // Query 1b — account-level asset structure (no date range)
+  const accountRows = await customer.query(`
+    SELECT ${ASSET_SELECT},
+      customer_asset.field_type,
+      customer_asset.status
+    FROM customer_asset
+    WHERE customer_asset.status != 'REMOVED'
+  `)
+
+  // Query 2 — campaign-level metrics (date-scoped)
+  const metricRows = await customer.query(`
+    SELECT
+      asset.id,
+      metrics.clicks,
+      metrics.impressions,
+      metrics.cost_micros,
+      metrics.ctr
+    FROM campaign_asset
+    WHERE campaign.id = ${campaignId}
+      AND segments.date BETWEEN '${startDate}' AND '${endDate}'
+  `)
+
+  const metricsMap = new Map<string, any>()
+  for (const r of metricRows) {
+    const id = String(r.asset?.id ?? '')
+    if (id) metricsMap.set(id, r)
+  }
+
+  const rows: AssetRow[] = []
+  for (const r of campaignRows) {
+    const row = mapAssetRow(r, 'CAMPAIGN', metricsMap)
+    if (row) rows.push(row)
+  }
+  for (const r of accountRows) {
+    const row = mapAssetRow(r, 'ACCOUNT', new Map())
+    if (row) rows.push(row)
+  }
+  return rows
+}
+
+export async function getPMaxAssets(
+  clientAccountId: string,
+  campaignId: string,
+): Promise<PMaxAssetRow[]> {
+  validateCampaignId(campaignId)
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer = await getClientCustomer(cleanedClientId)
+
+  const rows = await customer.query(`
+    SELECT
+      asset.id,
+      asset.type,
+      asset.text_asset.text,
+      asset.image_asset.full_size.url,
+      asset.youtube_video_asset.youtube_video_id,
+      asset_group_asset.field_type,
+      asset_group_asset.performance_label,
+      asset_group_asset.status,
+      asset_group.id
+    FROM asset_group_asset
+    WHERE asset_group.campaign = 'customers/${cleanedClientId}/campaigns/${campaignId}'
+      AND asset_group_asset.status != 'REMOVED'
+  `)
+
+  return rows.map((r: any) => ({
+    assetId:          String(r.asset?.id          ?? ''),
+    assetGroupId:     String(r.asset_group?.id    ?? ''),
+    fieldType:        String(r.asset_group_asset?.field_type        ?? ''),
+    performanceLabel: String(r.asset_group_asset?.performance_label ?? 'UNSPECIFIED'),
+    status:           String(r.asset_group_asset?.status            ?? 'ENABLED'),
+    text:     r.asset?.text_asset?.text                        ?? undefined,
+    imageUrl: r.asset?.image_asset?.full_size?.url             ?? undefined,
+    videoId:  r.asset?.youtube_video_asset?.youtube_video_id   ?? undefined,
+  })).filter((r: PMaxAssetRow) => r.assetId)
+}
+
+export async function createAndAttachAsset(
+  clientAccountId: string,
+  campaignId: string,
+  level: AssetLevel,
+  assetType: AssetType,
+  fields: Record<string, unknown>,
+): Promise<{ assetId: string }> {
+  validateCampaignId(campaignId)
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer = await getClientCustomer(cleanedClientId)
+
+  let assetObj: Record<string, unknown> = { type: ASSET_TYPE_NUM[assetType] }
+
+  switch (assetType) {
+    case 'SITELINK':
+      assetObj.sitelink_asset = {
+        link_text:    fields.linkText,
+        description1: fields.description1 ?? '',
+        description2: fields.description2 ?? '',
+      }
+      assetObj.final_urls = fields.finalUrls
+      break
+    case 'CALLOUT':
+      assetObj.callout_asset = { callout_text: fields.text }
+      break
+    case 'CALL':
+      assetObj.call_asset = { phone_number: fields.phoneNumber, country_code: fields.countryCode }
+      break
+    case 'STRUCTURED_SNIPPET':
+      assetObj.structured_snippet_asset = { header: fields.header, values: fields.values }
+      break
+    case 'IMAGE': {
+      const imgRes  = await fetch(fields.url as string)
+      const buf     = await imgRes.arrayBuffer()
+      const ct      = imgRes.headers.get('content-type') ?? 'image/jpeg'
+      const mimeMap: Record<string, number> = { 'image/jpeg': 13, 'image/png': 14, 'image/gif': 2, 'image/webp': 16 }
+      assetObj.image_asset = {
+        data:      Buffer.from(buf).toString('base64'),
+        mime_type: mimeMap[ct] ?? 13,
+      }
+      break
+    }
+    case 'PROMOTION':
+      assetObj.promotion_asset = {
+        promotion_target: fields.target,
+        ...(fields.percentOff     ? { percent_off:       Math.round((fields.percentOff as number) * 1_000_000) } : {}),
+        ...(fields.moneyAmountOff ? { money_amount_off:  { amount_micros: Math.round((fields.moneyAmountOff as number) * 1_000_000), currency_code: fields.currency ?? 'USD' } } : {}),
+        promotion_code: fields.promotionCode ?? '',
+        start_date:     fields.startDate ?? '',
+        end_date:       fields.endDate   ?? '',
+      }
+      assetObj.final_urls = fields.finalUrls
+      break
+    case 'PRICE':
+      assetObj.price_asset = {
+        type:            fields.priceType,
+        price_qualifier: fields.priceQualifier,
+        price_offerings: (fields.items as PriceItem[]).map(item => ({
+          header:      item.header,
+          description: item.description,
+          price:       { amount_micros: Math.round(item.priceValue * 1_000_000), currency_code: item.priceCurrency },
+          unit:        item.unit,
+          final_urls:  item.finalUrls,
+        })),
+      }
+      break
+    case 'LEAD_FORM':
+      assetObj.lead_form_asset = {
+        headline:           fields.headline,
+        description:        fields.description ?? '',
+        business_name:      fields.businessName,
+        privacy_policy_url: fields.privacyPolicyUrl,
+        call_to_action_type: fields.callToActionType ?? 2,
+      }
+      break
+  }
+
+  const createResp = await (customer.assets as any).create([assetObj]) as any
+  const assetResourceName: string = createResp?.results?.[0]?.resource_name ?? ''
+  const assetId = assetResourceName.split('/').pop() ?? ''
+
+  const linkObj =
+    level === 'CAMPAIGN'
+      ? { campaign: `customers/${cleanedClientId}/campaigns/${campaignId}`, asset: assetResourceName, field_type: FIELD_TYPE[assetType] }
+      : { asset: assetResourceName, field_type: FIELD_TYPE[assetType] }
+
+  if (level === 'CAMPAIGN') {
+    await (customer.campaignAssets as any).create([linkObj])
+  } else {
+    await (customer.customerAssets as any).create([linkObj])
+  }
+
+  return { assetId }
+}
+
+export async function updateAsset(
+  clientAccountId: string,
+  assetId: string,
+  assetType: AssetType,
+  fields: Record<string, unknown>,
+): Promise<void> {
+  if (!CAMPAIGN_ID_RE.test(assetId)) throw new Error('Invalid asset ID')
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer = await getClientCustomer(cleanedClientId)
+
+  const resourceName = `customers/${cleanedClientId}/assets/${assetId}`
+  let updateObj: Record<string, unknown> = { resource_name: resourceName }
+
+  switch (assetType) {
+    case 'SITELINK':
+      updateObj.sitelink_asset = {
+        link_text:    fields.linkText,
+        description1: fields.description1 ?? '',
+        description2: fields.description2 ?? '',
+      }
+      updateObj.final_urls = fields.finalUrls
+      break
+    case 'CALLOUT':
+      updateObj.callout_asset = { callout_text: fields.text }
+      break
+    case 'STRUCTURED_SNIPPET':
+      updateObj.structured_snippet_asset = { header: fields.header, values: fields.values }
+      break
+    case 'PROMOTION':
+      updateObj.promotion_asset = {
+        promotion_target: fields.target,
+        ...(fields.percentOff     ? { percent_off:      Math.round((fields.percentOff as number) * 1_000_000) } : {}),
+        promotion_code: fields.promotionCode ?? '',
+        start_date:     fields.startDate ?? '',
+        end_date:       fields.endDate   ?? '',
+      }
+      updateObj.final_urls = fields.finalUrls
+      break
+    case 'PRICE':
+      updateObj.price_asset = {
+        type:            fields.priceType,
+        price_qualifier: fields.priceQualifier,
+        price_offerings: (fields.items as PriceItem[]).map(item => ({
+          header:      item.header,
+          description: item.description,
+          price:       { amount_micros: Math.round(item.priceValue * 1_000_000), currency_code: item.priceCurrency },
+          unit:        item.unit,
+          final_urls:  item.finalUrls,
+        })),
+      }
+      break
+    default:
+      throw new Error(`Asset type ${assetType} does not support editing`)
+  }
+
+  await (customer.assets as any).update([updateObj])
+}
+
+export async function detachAsset(
+  clientAccountId: string,
+  campaignId: string,
+  assetId: string,
+  fieldTypeNum: number,
+  level: AssetLevel,
+): Promise<void> {
+  validateCampaignId(campaignId)
+  if (!CAMPAIGN_ID_RE.test(assetId)) throw new Error('Invalid asset ID')
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer = await getClientCustomer(cleanedClientId)
+
+  if (level === 'CAMPAIGN') {
+    await (customer.campaignAssets as any).remove([
+      `customers/${cleanedClientId}/campaignAssets/${campaignId}~${assetId}~${fieldTypeNum}`,
+    ])
+  } else {
+    await (customer.customerAssets as any).remove([
+      `customers/${cleanedClientId}/customerAssets/${cleanedClientId}~${assetId}~${fieldTypeNum}`,
+    ])
+  }
+}
+
+export async function createAndAttachPMaxAsset(
+  clientAccountId: string,
+  assetGroupId: string,
+  fieldType: string,
+  fields: Record<string, unknown>,
+): Promise<{ assetId: string }> {
+  if (!CAMPAIGN_ID_RE.test(assetGroupId)) throw new Error('Invalid asset_group_id')
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer = await getClientCustomer(cleanedClientId)
+
+  let assetObj: Record<string, unknown> = {}
+  if (fields.text)    assetObj = { type: 49, text_asset: { text: fields.text } }          // TEXT
+  if (fields.videoId) assetObj = { type: 8,  youtube_video_asset: { youtube_video_id: fields.videoId } }  // YOUTUBE_VIDEO
+
+  const createResp = await (customer.assets as any).create([assetObj]) as any
+  const assetResourceName: string = createResp?.results?.[0]?.resource_name ?? ''
+  const assetId = assetResourceName.split('/').pop() ?? ''
+
+  await (customer.assetGroupAssets as any).create([{
+    asset_group: `customers/${cleanedClientId}/assetGroups/${assetGroupId}`,
+    asset:       assetResourceName,
+    field_type:  fieldType,
+  }])
+
+  return { assetId }
+}
+
+export async function detachPMaxAsset(
+  clientAccountId: string,
+  assetGroupId: string,
+  assetId: string,
+  fieldType: string,
+): Promise<void> {
+  if (!CAMPAIGN_ID_RE.test(assetGroupId)) throw new Error('Invalid asset_group_id')
+  if (!CAMPAIGN_ID_RE.test(assetId))      throw new Error('Invalid asset ID')
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer = await getClientCustomer(cleanedClientId)
+  await (customer.assetGroupAssets as any).remove([
+    `customers/${cleanedClientId}/assetGroupAssets/${assetGroupId}~${assetId}~${fieldType}`,
+  ])
+}
