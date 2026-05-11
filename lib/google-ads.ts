@@ -2537,8 +2537,10 @@ export async function getAssets(
   const customer = await getClientCustomer(cleanedClientId)
 
   // Query 1a — campaign-level asset structure (no date range)
+  // campaign.id must be in SELECT when used in WHERE (GAQL rule)
   const campaignRows = await customer.query(`
     SELECT ${ASSET_SELECT},
+      campaign.id,
       campaign_asset.field_type,
       campaign_asset.status
     FROM campaign_asset
@@ -2556,8 +2558,10 @@ export async function getAssets(
   `)
 
   // Query 2 — campaign-level metrics (date-scoped)
+  // campaign.id must be in SELECT when used in WHERE (GAQL rule)
   const metricRows = await customer.query(`
     SELECT
+      campaign.id,
       asset.id,
       metrics.clicks,
       metrics.impressions,
