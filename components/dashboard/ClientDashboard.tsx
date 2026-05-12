@@ -17,6 +17,7 @@ import { ChangeHistorySection }    from '@/components/dashboard/ChangeHistorySec
 import { ClientReportSection }     from '@/components/dashboard/ClientReportSection'
 import { RecommendationsSection }  from '@/components/dashboard/RecommendationsSection'
 import { AIAnalystSection }        from '@/components/dashboard/AIAnalystSection'
+import { SharedBudgetsSection }    from '@/components/dashboard/SharedBudgetsSection'
 
 interface GoogleClient { id: string; name: string }
 
@@ -497,9 +498,18 @@ export function ClientDashboard() {
   const searchParams = useSearchParams()
   const [clients,          setClients]          = useState<GoogleClient[]>([])
   const [clientId,         setClientId]         = useState(() => searchParams.get('client') ?? '')
-  const [preset,           setPreset]           = useState('30')
-  const [customStart,      setCustomStart]       = useState('')
-  const [customEnd,        setCustomEnd]         = useState('')
+  const [preset,           setPreset]           = useState(() => {
+    if (typeof window === 'undefined') return '30'
+    return localStorage.getItem('ads_date_preset') ?? '30'
+  })
+  const [customStart,      setCustomStart]       = useState(() => {
+    if (typeof window === 'undefined') return ''
+    return localStorage.getItem('ads_date_custom_start') ?? ''
+  })
+  const [customEnd,        setCustomEnd]         = useState(() => {
+    if (typeof window === 'undefined') return ''
+    return localStorage.getItem('ads_date_custom_end') ?? ''
+  })
   const [compare,          setCompare]          = useState(false)
   const [stats,            setStats]            = useState<AccountStats | null>(null)
   const [compareStats,     setCompareStats]     = useState<AccountStats | null>(null)
@@ -514,6 +524,11 @@ export function ClientDashboard() {
   const [convError,        setConvError]        = useState('')
   const [campaignSearch,   setCampaignSearch]   = useState('')
   const [showSearchTerms,  setShowSearchTerms]  = useState(false)
+
+  // Persist date range preference
+  useEffect(() => { localStorage.setItem('ads_date_preset', preset) }, [preset])
+  useEffect(() => { localStorage.setItem('ads_date_custom_start', customStart) }, [customStart])
+  useEffect(() => { localStorage.setItem('ads_date_custom_end',   customEnd)   }, [customEnd])
 
   useEffect(() => {
     fetch('/api/clients').then(r => r.json()).then(d => {
@@ -836,6 +851,13 @@ export function ClientDashboard() {
                 endDate={re}
                 currency={stats.currency}
               />
+            </div>
+          )}
+
+          {/* ── Shared Budgets ── */}
+          {clientId && stats && (
+            <div className="mt-2">
+              <SharedBudgetsSection clientId={clientId} currency={stats.currency} />
             </div>
           )}
 

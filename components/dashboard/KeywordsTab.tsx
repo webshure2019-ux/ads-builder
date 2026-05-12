@@ -69,6 +69,76 @@ function getQsAdvice(row: KeywordRow): string {
 // ─── Status helpers ───────────────────────────────────────────────────────────
 function isKwEnabled(s: string) { return s === 'ENABLED' || s === '2' }
 
+// ─── Inline bid editor ────────────────────────────────────────────────────────
+function BidCell({ kw, clientId, currency, onUpdated }: {
+  kw: KeywordRow; clientId: string; currency: string; onUpdated: (micros: number) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [value,   setValue]   = useState('')
+  const [saving,  setSaving]  = useState(false)
+  const [error,   setError]   = useState('')
+
+  const displayBid = kw.cpcBidMicros > 0
+    ? (kw.cpcBidMicros / 1_000_000).toFixed(2)
+    : null
+
+  async function save() {
+    const amount = parseFloat(value)
+    if (!Number.isFinite(amount) || amount <= 0) { setError('Enter a valid bid'); return }
+    setSaving(true); setError('')
+    try {
+      const res = await fetch('/api/keyword-bid', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_account_id: clientId,
+          ad_group_id:       kw.adGroupId,
+          criterion_id:      kw.criterionId,
+          cpc_bid_micros:    Math.round(amount * 1_000_000),
+        }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error)
+      onUpdated(Math.round(amount * 1_000_000))
+      setEditing(false)
+    } catch (e: any) { setError(e.message) }
+    finally { setSaving(false) }
+  }
+
+  if (!editing) return (
+    <button
+      onClick={() => { setValue(displayBid ?? ''); setEditing(true) }}
+      className="group flex items-center gap-1 text-right whitespace-nowrap"
+      title="Click to edit CPC bid"
+    >
+      <span className="tabular-nums text-xs text-navy/70">
+        {displayBid ? `${currency} ${displayBid}` : <span className="text-navy/30 italic text-[10px]">auto</span>}
+      </span>
+      <span className="text-[9px] text-navy/25 group-hover:text-cyan transition-colors">✏️</span>
+    </button>
+  )
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] text-teal flex-shrink-0">{currency}</span>
+        <input
+          type="number" min="0.01" step="0.01" value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
+          className="w-20 border border-cyan rounded-lg px-2 py-0.5 text-xs text-navy focus:outline-none bg-white tabular-nums"
+          autoFocus
+        />
+        <button onClick={save} disabled={saving}
+          className="text-[10px] font-bold bg-cyan text-navy px-2 py-0.5 rounded-lg hover:bg-cyan/80 disabled:opacity-50 transition-colors">
+          {saving ? '…' : '✓'}
+        </button>
+        <button onClick={() => setEditing(false)} className="text-[10px] text-navy/40 hover:text-navy px-1 transition-colors">✕</button>
+      </div>
+      {error && <p className="text-[9px] text-red-500">{error}</p>}
+    </div>
+  )
+}
+
 // ─── Inline pause / enable button ────────────────────────────────────────────
 function KwToggleBtn({ kw, clientId, onUpdated }: {
   kw: KeywordRow; clientId: string; onUpdated: (status: string) => void
@@ -106,9 +176,10 @@ function KwToggleBtn({ kw, clientId, onUpdated }: {
   )
 }
 
-// ─── Keyword row (stateful for inline toggle) ─────────────────────────────────
-function KwRow({ kw: initial, clientId, showCampaign }: {
-  kw: KeywordRow; clientId: string; showCampaign: boolean
+// ─── Keyword row (stateful for inline toggle + bid edit) ──────────────────────
+function KwRow({ kw: initial, clientId, currency, showCampaign, selected, onSelect }: {
+  kw: KeywordRow; clientId: string; currency: string; showCampaign: boolean
+  selected: boolean; onSelect: () => void
 }) {
   const [kw, setKw] = useState(initial)
   const active = isKwEnabled(kw.status)
@@ -116,6 +187,14 @@ function KwRow({ kw: initial, clientId, showCampaign }: {
 
   return (
     <tr className={`transition-colors hover:bg-mist/50 ${!active ? 'opacity-60' : ''}`}>
+      <td className="w-8 px-2 py-2.5 text-center">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onSelect}
+          className="accent-cyan w-3.5 h-3.5"
+        />
+      </td>
       <td className="px-3 py-2.5 max-w-[200px]">
         <div className="flex items-center gap-1.5 min-w-0">
           <MatchBadge matchType={kw.matchType} />
@@ -148,6 +227,10 @@ function KwRow({ kw: initial, clientId, showCampaign }: {
       <td className="px-3 py-2.5 text-center"><BucketBadge value={kw.expectedCtr} /></td>
       <td className="px-3 py-2.5 text-center"><BucketBadge value={kw.adRelevance} /></td>
       <td className="px-3 py-2.5 text-center"><BucketBadge value={kw.landingPageExp} /></td>
+      <td className="px-3 py-2.5 text-right">
+        <BidCell kw={kw} clientId={clientId} currency={currency}
+          onUpdated={micros => setKw(prev => ({ ...prev, cpcBidMicros: micros }))} />
+      </td>
       <td className="px-3 py-2.5 text-right tabular-nums text-xs text-navy/70">{kw.impressions.toLocaleString()}</td>
       <td className="px-3 py-2.5 text-right tabular-nums text-xs text-navy/70">{kw.clicks.toLocaleString()}</td>
       <td className="px-3 py-2.5 text-right tabular-nums text-xs text-navy/70">{kw.ctr.toFixed(2)}%</td>
@@ -203,6 +286,9 @@ export function KeywordsTab({ clientId, startDate, endDate, currency, campaignId
   const [qsFilter,    setQsFilter]    = useState<QsFilter>('')
   const [showPaused,  setShowPaused]  = useState(false)
   const [issuesOpen,  setIssuesOpen]  = useState(true)
+  const [selectedKwIds, setSelectedKwIds] = useState<Set<string>>(new Set())
+  const [bulkWorking,   setBulkWorking]   = useState(false)
+  const [bulkError,     setBulkError]     = useState('')
 
   const fetchKey = `${clientId}|${startDate}|${endDate}|${campaignId ?? ''}`
 
@@ -294,6 +380,72 @@ export function KeywordsTab({ clientId, startDate, endDate, currency, campaignId
   function toggleSort(col: SortCol) {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortCol(col); setSortDir(col === 'text' ? 'asc' : 'desc') }
+  }
+
+  function exportCSV() {
+    const header = [
+      'Keyword', 'Match Type', 'Campaign', 'Ad Group', 'Status', 'Quality Score',
+      'Exp CTR', 'Ad Relevance', 'Landing Page Exp',
+      `Bid (${currency})`, 'Impressions', 'Clicks', 'CTR %',
+      `Cost (${currency})`, 'Conversions', `CPA (${currency})`,
+    ]
+    const rows = sorted.map(k => [
+      k.text, k.matchType, k.campaignName, k.adGroupName,
+      isKwEnabled(k.status) ? 'Active' : 'Paused',
+      k.qualityScore ?? '',
+      k.expectedCtr, k.adRelevance, k.landingPageExp,
+      k.cpcBidMicros > 0 ? (k.cpcBidMicros / 1_000_000).toFixed(2) : '',
+      k.impressions, k.clicks, k.ctr.toFixed(2),
+      k.cost.toFixed(2), k.conversions.toFixed(1),
+      k.cpa > 0 ? k.cpa.toFixed(2) : '',
+    ])
+    const csv = [header, ...rows]
+      .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `keywords-${startDate}-${endDate}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function kwKey(kw: KeywordRow) { return `${kw.adGroupId}~${kw.criterionId}` }
+
+  function toggleSelectKw(key: string) {
+    setSelectedKwIds(prev => {
+      const next = new Set(Array.from(prev))
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
+
+  function toggleSelectAllKw() {
+    if (selectedKwIds.size === sorted.length) {
+      setSelectedKwIds(new Set())
+    } else {
+      setSelectedKwIds(new Set(sorted.map(kwKey)))
+    }
+  }
+
+  async function bulkKwStatus(status: 'ENABLED' | 'PAUSED') {
+    if (selectedKwIds.size === 0) return
+    setBulkWorking(true); setBulkError('')
+    const targets = sorted.filter(k => selectedKwIds.has(kwKey(k)))
+    try {
+      await Promise.all(targets.map(k =>
+        fetch('/api/keyword-status', {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ client_account_id: clientId, ad_group_id: k.adGroupId, criterion_id: k.criterionId, status }),
+        }).then(async r => { if (!r.ok) throw new Error((await r.json()).error) })
+      ))
+      setKeywords(prev => prev.map(k =>
+        selectedKwIds.has(kwKey(k)) ? { ...k, status } : k
+      ))
+      setSelectedKwIds(new Set())
+    } catch (e: any) { setBulkError(e.message) }
+    finally { setBulkWorking(false) }
   }
 
   function SortTh({ col, label, align = 'right' }: { col: SortCol; label: string; align?: 'left' | 'right' | 'center' }) {
@@ -555,13 +707,54 @@ export function KeywordsTab({ clientId, startDate, endDate, currency, campaignId
         <p className="text-[10px] text-navy/40 ml-auto tabular-nums">
           {filtered.length.toLocaleString()} keyword{filtered.length !== 1 ? 's' : ''}
         </p>
+        {sorted.length > 0 && (
+          <button
+            onClick={exportCSV}
+            className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border border-cloud text-navy/60 hover:border-cyan/40 hover:text-navy transition-all whitespace-nowrap"
+            title="Export filtered keywords to CSV"
+          >
+            ⬇ CSV
+          </button>
+        )}
       </div>
+
+      {/* ── Bulk action bar ── */}
+      {selectedKwIds.size > 0 && (
+        <div className="flex items-center gap-2 bg-cyan/10 border border-cyan/30 rounded-xl px-3 py-2">
+          <span className="text-[11px] font-bold text-navy">{selectedKwIds.size} selected</span>
+          <button
+            onClick={() => bulkKwStatus('ENABLED')}
+            disabled={bulkWorking}
+            className="text-[11px] font-bold px-3 py-1 rounded-lg bg-emerald-100 text-emerald-700 border border-emerald-300 hover:bg-emerald-200 disabled:opacity-50 transition-colors whitespace-nowrap"
+          >
+            {bulkWorking ? '…' : '▶ Enable'}
+          </button>
+          <button
+            onClick={() => bulkKwStatus('PAUSED')}
+            disabled={bulkWorking}
+            className="text-[11px] font-bold px-3 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100 disabled:opacity-50 transition-colors whitespace-nowrap"
+          >
+            {bulkWorking ? '…' : '⏸ Pause'}
+          </button>
+          <button onClick={() => setSelectedKwIds(new Set())} className="text-[11px] text-navy/40 hover:text-navy transition-colors">✕</button>
+          {bulkError && <span className="text-[10px] text-red-500">{bulkError}</span>}
+        </div>
+      )}
 
       {/* ── Table ── */}
       <div className="overflow-x-auto rounded-2xl border border-cloud">
         <table className="w-full text-sm min-w-[900px]">
           <thead>
             <tr className="border-b border-cloud bg-mist">
+              <th className="w-8 px-2 py-2.5 text-center">
+                <input
+                  type="checkbox"
+                  checked={sorted.length > 0 && selectedKwIds.size === sorted.length}
+                  onChange={toggleSelectAllKw}
+                  className="accent-cyan w-3.5 h-3.5"
+                  title="Select all"
+                />
+              </th>
               <SortTh col="text" label="Keyword" align="left" />
               {showCampaign && <th className="px-3 py-2.5 text-left text-[10px] font-heading font-bold uppercase tracking-wider text-teal whitespace-nowrap">Campaign</th>}
               <th className="px-3 py-2.5 text-left text-[10px] font-heading font-bold uppercase tracking-wider text-teal whitespace-nowrap">Ad Group</th>
@@ -570,6 +763,7 @@ export function KeywordsTab({ clientId, startDate, endDate, currency, campaignId
               <th className="px-3 py-2.5 text-center text-[10px] font-heading font-bold uppercase tracking-wider text-teal" title="Expected CTR">Exp CTR</th>
               <th className="px-3 py-2.5 text-center text-[10px] font-heading font-bold uppercase tracking-wider text-teal" title="Ad Relevance">Ad Rel.</th>
               <th className="px-3 py-2.5 text-center text-[10px] font-heading font-bold uppercase tracking-wider text-teal" title="Landing Page Experience">LPE</th>
+              <th className="px-3 py-2.5 text-right text-[10px] font-heading font-bold uppercase tracking-wider text-teal whitespace-nowrap" title="Max CPC Bid">Bid</th>
               <SortTh col="impressions" label="Impr." />
               <SortTh col="clicks" label="Clicks" />
               <SortTh col="ctr" label="CTR" />
@@ -582,19 +776,27 @@ export function KeywordsTab({ clientId, startDate, endDate, currency, campaignId
           <tbody className="divide-y divide-cloud">
             {paged.length === 0 ? (
               <tr>
-                <td colSpan={showCampaign ? 15 : 14} className="py-12 text-center text-teal text-sm">
+                <td colSpan={showCampaign ? 17 : 16} className="py-12 text-center text-teal text-sm">
                   No keywords match the current filters.
                 </td>
               </tr>
-            ) : paged.map((kw, i) => (
-              <KwRow key={`${kw.adGroupId}~${kw.criterionId}-${i}`} kw={kw} clientId={clientId} showCampaign={showCampaign} />
-            ))}
+            ) : paged.map((kw, i) => {
+              const key = `${kw.adGroupId}~${kw.criterionId}`
+              return (
+                <KwRow
+                  key={`${key}-${i}`}
+                  kw={kw} clientId={clientId} currency={currency} showCampaign={showCampaign}
+                  selected={selectedKwIds.has(key)}
+                  onSelect={() => toggleSelectKw(key)}
+                />
+              )
+            })}
           </tbody>
           {/* Totals footer */}
           {sorted.length > 0 && (
             <tfoot>
               <tr className="border-t-2 border-cloud/70 bg-mist">
-                <td className="px-3 py-2.5 text-[11px] font-heading font-bold text-navy" colSpan={showCampaign ? 8 : 7}>
+                <td className="px-3 py-2.5 text-[11px] font-heading font-bold text-navy" colSpan={showCampaign ? 10 : 9}>
                   Total · {sorted.length.toLocaleString()} keyword{sorted.length !== 1 ? 's' : ''}
                 </td>
                 <td className="px-3 py-2.5 text-right text-xs font-bold text-navy tabular-nums">

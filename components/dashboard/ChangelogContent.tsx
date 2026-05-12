@@ -9,6 +9,14 @@ import type { FeatureRequest } from '@/app/api/feature-requests/route'
 // ("~14:30 SAST"). Newest first always.
 
 const FEATURES: { emoji: string; text: string; date: string }[] = [
+  { emoji: '💰', text: 'Shared Budgets section — view all account-level shared budget pools with campaigns, edit daily amounts inline', date: '12 May 2026' },
+  { emoji: '👥', text: 'Audiences tab — per-campaign audience targets with inline bid modifier editing (Observation vs Targeting mode)', date: '12 May 2026' },
+  { emoji: '📅', text: 'Ad Schedule tab — view and manage ad scheduling bid adjustments by day and time slot; add/remove/edit entries', date: '12 May 2026' },
+  { emoji: '✏️', text: 'Campaign name editing — rename campaigns inline from the campaigns table (hover ✏️ icon next to campaign name)', date: '12 May 2026' },
+  { emoji: '☑️', text: 'Bulk actions — select multiple campaigns or keywords with checkboxes; bulk Enable/Pause with a single click', date: '12 May 2026' },
+  { emoji: '⬇️', text: 'CSV export for keywords and search terms — export any filtered/sorted view with all metrics to a CSV file', date: '12 May 2026' },
+  { emoji: '💾', text: 'Date range persistence — selected date range preset is saved to localStorage and restored on next visit', date: '12 May 2026' },
+  { emoji: '💲', text: 'Keyword bid editing — click any keyword bid to edit the Max CPC inline; "auto" shown for ad-group-default bids', date: '12 May 2026' },
   { emoji: '🔗', text: 'Assets tab — view, add, edit, and remove all ad extensions per campaign; full PMax asset group management with performance labels', date: '11 May 2026' },
   { emoji: '📍', text: 'Locations tab — view, edit, and optimise location targets per campaign',           date: '8 May 2026' },
   { emoji: '📋', text: "What's New page — changelog + feature request form",                               date: '8 May 2026' },

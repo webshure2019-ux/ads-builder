@@ -1364,6 +1364,7 @@ export interface KeywordRow {
   ctr:            number    // 0–100 %
   avgCpc:         number
   cpa:            number
+  cpcBidMicros:   number    // manual CPC bid in micros (0 = using ad group default)
 }
 
 export async function getKeywords(
@@ -1414,7 +1415,8 @@ export async function getKeywords(
         ad_group_criterion.quality_info.quality_score,
         ad_group_criterion.quality_info.search_predicted_ctr,
         ad_group_criterion.quality_info.creative_quality_score,
-        ad_group_criterion.quality_info.post_click_quality_score
+        ad_group_criterion.quality_info.post_click_quality_score,
+        ad_group_criterion.cpc_bid_micros
       FROM keyword_view
       WHERE campaign.status != 'REMOVED'
         AND ad_group.status != 'REMOVED'
@@ -1423,12 +1425,13 @@ export async function getKeywords(
     `).catch(() => [] as any[]) as Promise<any[]>,
   ])
 
-  // QS lookup: `${adGroupId}~${criterionId}` → QS data
+  // QS lookup: `${adGroupId}~${criterionId}` → QS data + bid
   const qsMap = new Map<string, {
     qualityScore:   number | null
     expectedCtr:    string
     adRelevance:    string
     landingPageExp: string
+    cpcBidMicros:   number
   }>()
   for (const r of qsResults) {
     const agId   = String(r.ad_group?.id                       ?? '')
@@ -1440,6 +1443,7 @@ export async function getKeywords(
       expectedCtr:    normalizeQsBucket(r.ad_group_criterion?.quality_info?.search_predicted_ctr),
       adRelevance:    normalizeQsBucket(r.ad_group_criterion?.quality_info?.creative_quality_score),
       landingPageExp: normalizeQsBucket(r.ad_group_criterion?.quality_info?.post_click_quality_score),
+      cpcBidMicros:   Number(r.ad_group_criterion?.cpc_bid_micros ?? 0),
     })
   }
 
@@ -1497,6 +1501,7 @@ export async function getKeywords(
         expectedCtr:    qs?.expectedCtr    ?? 'UNKNOWN',
         adRelevance:    qs?.adRelevance    ?? 'UNKNOWN',
         landingPageExp: qs?.landingPageExp ?? 'UNKNOWN',
+        cpcBidMicros:   qs?.cpcBidMicros   ?? 0,
         impressions:    kw.impressions,
         clicks:         kw.clicks,
         cost,
@@ -1511,6 +1516,24 @@ export async function getKeywords(
 }
 
 const KEYWORD_STATUS_API_MAP = { ENABLED: 2, PAUSED: 3 } as const
+
+export async function updateKeywordBid(
+  clientAccountId: string,
+  adGroupId:       string,
+  criterionId:     string,
+  cpcBidMicros:    number
+): Promise<void> {
+  if (!CAMPAIGN_ID_RE.test(adGroupId))   throw new Error('Invalid ad group ID')
+  if (!CAMPAIGN_ID_RE.test(criterionId)) throw new Error('Invalid criterion ID')
+  if (!Number.isFinite(cpcBidMicros) || cpcBidMicros < 0)
+    throw new Error('cpcBidMicros must be a non-negative number')
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer        = await getClientCustomer(cleanedClientId)
+  await (customer.adGroupCriteria as any).update([{
+    resource_name:   `customers/${cleanedClientId}/adGroupCriteria/${adGroupId}~${criterionId}`,
+    cpc_bid_micros:  Math.round(cpcBidMicros),
+  }])
+}
 
 export async function setKeywordStatus(
   clientAccountId: string,
@@ -2842,4 +2865,307 @@ export async function detachPMaxAsset(
   await (customer.assetGroupAssets as any).remove([
     `customers/${cleanedClientId}/assetGroupAssets/${assetGroupId}~${assetId}~${fieldType}`,
   ])
+}
+
+// ─── Ad Schedule ─────────────────────────────────────────────────────────────
+
+// ─── Shared Budgets ───────────────────────────────────────────────────────────
+
+export interface SharedBudget {
+  resourceName:      string
+  budgetId:          string
+  name:              string
+  amountMicros:      number
+  period:            string   // 'DAILY' | 'FIXED_DAILY' etc.
+  referenceCount:    number   // number of campaigns sharing this budget
+  campaigns:         { id: string; name: string; status: string }[]
+}
+
+export async function getSharedBudgets(
+  clientAccountId: string,
+): Promise<SharedBudget[]> {
+  const customer = await getClientCustomer(clientAccountId)
+  const cleanedClientId = cleanId(clientAccountId)
+
+  // Query 1: all shared budgets (explicitly_shared = true)
+  const budgetRows = await customer.query(`
+    SELECT
+      campaign_budget.resource_name,
+      campaign_budget.id,
+      campaign_budget.name,
+      campaign_budget.amount_micros,
+      campaign_budget.period,
+      campaign_budget.reference_count
+    FROM campaign_budget
+    WHERE campaign_budget.explicitly_shared = true
+      AND campaign_budget.status != 'REMOVED'
+    LIMIT 200
+  `).catch(() => []) as any[]
+
+  if (budgetRows.length === 0) return []
+
+  const budgetIds = budgetRows
+    .map((r: any) => String(r.campaign_budget?.id ?? ''))
+    .filter(Boolean)
+
+  // Query 2: campaigns using these budgets
+  const campaignRows = await customer.query(`
+    SELECT
+      campaign.id,
+      campaign.name,
+      campaign.status,
+      campaign_budget.id
+    FROM campaign
+    WHERE campaign.campaign_budget IN (${budgetIds.map(id => `'customers/${cleanedClientId}/campaignBudgets/${id}'`).join(',')})
+      AND campaign.status != 'REMOVED'
+    LIMIT 1000
+  `).catch(() => []) as any[]
+
+  // Group campaigns by budget id
+  const campaignsByBudget = new Map<string, { id: string; name: string; status: string }[]>()
+  for (const r of campaignRows) {
+    const budgetId = String(r.campaign_budget?.id ?? '')
+    const camp = {
+      id:     String(r.campaign?.id     ?? ''),
+      name:   String(r.campaign?.name   ?? ''),
+      status: String(r.campaign?.status ?? ''),
+    }
+    const arr = campaignsByBudget.get(budgetId) ?? []
+    arr.push(camp)
+    campaignsByBudget.set(budgetId, arr)
+  }
+
+  return budgetRows.map((r: any) => {
+    const cb = r.campaign_budget ?? {}
+    const id = String(cb.id ?? '')
+    return {
+      resourceName:   String(cb.resource_name   ?? ''),
+      budgetId:       id,
+      name:           String(cb.name            ?? 'Unnamed budget'),
+      amountMicros:   Number(cb.amount_micros   ?? 0),
+      period:         String(cb.period          ?? 'DAILY'),
+      referenceCount: Number(cb.reference_count ?? 0),
+      campaigns:      campaignsByBudget.get(id) ?? [],
+    }
+  })
+}
+
+export async function updateSharedBudget(
+  clientAccountId: string,
+  resourceName:    string,
+  amountMicros:    number,
+): Promise<void> {
+  if (!resourceName.startsWith('customers/')) throw new Error('Invalid resource name')
+  if (!Number.isFinite(amountMicros) || amountMicros < 0)
+    throw new Error('amountMicros must be a non-negative number')
+  const customer = await getClientCustomer(clientAccountId)
+  await (customer.campaignBudgets as any).update([{
+    resource_name:  resourceName,
+    amount_micros:  Math.round(amountMicros),
+  }])
+}
+
+// ─── Audience Targets ─────────────────────────────────────────────────────────
+
+export interface AudienceTargetRow {
+  resourceName:  string
+  criterionId:   string
+  userListName:  string
+  userListId:    string
+  bidModifier:   number
+  targeting:     'OBSERVATION' | 'TARGETING'  // observation = bid adjustment only; targeting = restrict reach
+}
+
+export async function getAudienceTargets(
+  clientAccountId: string,
+  campaignId:      string,
+): Promise<AudienceTargetRow[]> {
+  validateCampaignId(campaignId)
+  const customer = await getClientCustomer(clientAccountId)
+
+  const rows = await customer.query(`
+    SELECT
+      campaign_criterion.resource_name,
+      campaign_criterion.criterion_id,
+      campaign_criterion.bid_modifier,
+      campaign_criterion.user_list.user_list,
+      campaign_criterion.targeting_setting,
+      user_list.name,
+      user_list.id
+    FROM campaign_criterion
+    WHERE campaign.id = ${campaignId}
+      AND campaign_criterion.type = 'USER_LIST'
+      AND campaign_criterion.status != 'REMOVED'
+    LIMIT 200
+  `).catch(() => []) as any[]
+
+  return rows.map((r: any) => {
+    const cc = r.campaign_criterion ?? {}
+    const ul = r.user_list ?? {}
+    const targetingRaw = String(cc.targeting_setting ?? '')
+    return {
+      resourceName: String(cc.resource_name ?? ''),
+      criterionId:  String(cc.criterion_id  ?? ''),
+      userListName: String(ul.name ?? 'Unknown audience'),
+      userListId:   String(ul.id   ?? ''),
+      bidModifier:  cc.bid_modifier != null ? Number(cc.bid_modifier) : 1.0,
+      targeting:    (targetingRaw === 'TARGETING' || targetingRaw === '2') ? 'TARGETING' : 'OBSERVATION',
+    }
+  })
+}
+
+export async function updateAudienceTargetBid(
+  clientAccountId: string,
+  resourceName:    string,
+  bidModifier:     number,
+): Promise<void> {
+  if (!resourceName.startsWith('customers/')) throw new Error('Invalid resource name')
+  const customer = await getClientCustomer(clientAccountId)
+  await (customer.campaignCriteria as any).update([{
+    resource_name: resourceName,
+    bid_modifier:  bidModifier,
+  }])
+}
+
+// ─── Campaign rename ──────────────────────────────────────────────────────────
+
+export async function renameCampaign(
+  clientAccountId: string,
+  campaignId:      string,
+  newName:         string,
+): Promise<void> {
+  validateCampaignId(campaignId)
+  const trimmed = newName.trim()
+  if (!trimmed) throw new Error('Campaign name cannot be empty')
+  if (trimmed.length > 255) throw new Error('Campaign name must be 255 characters or fewer')
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer        = await getClientCustomer(cleanedClientId)
+  await (customer.campaigns as any).update([{
+    resource_name: `customers/${cleanedClientId}/campaigns/${campaignId}`,
+    name:          trimmed,
+  }])
+}
+
+// ─── Ad Schedule ─────────────────────────────────────────────────────────────
+
+export type DayOfWeek = 'MONDAY' | 'TUESDAY' | 'WEDNESDAY' | 'THURSDAY' | 'FRIDAY' | 'SATURDAY' | 'SUNDAY'
+
+export interface AdScheduleEntry {
+  resourceName:  string
+  criterionId:   string
+  dayOfWeek:     DayOfWeek
+  startHour:     number   // 0–23
+  startMinute:   number   // 0 | 15 | 30 | 45
+  endHour:       number   // 0–24
+  endMinute:     number   // 0 | 15 | 30 | 45
+  bidModifier:   number   // e.g. 1.2 = +20%, 0.8 = -20%, 0 = excluded
+}
+
+// Maps string day-of-week names to their API numeric values
+const DAY_OF_WEEK_NUM: Record<string, DayOfWeek> = {
+  '2': 'MONDAY', 'MONDAY':    'MONDAY',
+  '3': 'TUESDAY','TUESDAY':   'TUESDAY',
+  '4': 'WEDNESDAY','WEDNESDAY':'WEDNESDAY',
+  '5': 'THURSDAY','THURSDAY': 'THURSDAY',
+  '6': 'FRIDAY',  'FRIDAY':   'FRIDAY',
+  '7': 'SATURDAY','SATURDAY': 'SATURDAY',
+  '8': 'SUNDAY',  'SUNDAY':   'SUNDAY',
+}
+
+const DAY_API_NUM: Record<DayOfWeek, number> = {
+  MONDAY: 2, TUESDAY: 3, WEDNESDAY: 4, THURSDAY: 5,
+  FRIDAY: 6, SATURDAY: 7, SUNDAY: 8,
+}
+
+const MINUTE_NUM: Record<string, number> = {
+  '0': 0, 'ZERO': 0, '15': 15, 'FIFTEEN': 15,
+  '30': 30, 'THIRTY': 30, '45': 45, 'FORTY_FIVE': 45,
+}
+
+const MINUTE_API_NUM: Record<number, number> = { 0: 0, 15: 15, 30: 30, 45: 45 }
+
+export async function getAdSchedule(
+  clientAccountId: string,
+  campaignId:      string,
+): Promise<AdScheduleEntry[]> {
+  validateCampaignId(campaignId)
+  const customer = await getClientCustomer(clientAccountId)
+
+  const rows = await customer.query(`
+    SELECT
+      campaign_criterion.resource_name,
+      campaign_criterion.criterion_id,
+      campaign_criterion.ad_schedule.day_of_week,
+      campaign_criterion.ad_schedule.start_hour,
+      campaign_criterion.ad_schedule.start_minute,
+      campaign_criterion.ad_schedule.end_hour,
+      campaign_criterion.ad_schedule.end_minute,
+      campaign_criterion.bid_modifier
+    FROM campaign_criterion
+    WHERE campaign.id = ${campaignId}
+      AND campaign_criterion.type = 'AD_SCHEDULE'
+      AND campaign_criterion.status != 'REMOVED'
+    LIMIT 200
+  `).catch(() => []) as any[]
+
+  return rows.map((r: any) => {
+    const s = r.campaign_criterion ?? {}
+    const sched = s.ad_schedule ?? {}
+    return {
+      resourceName: String(s.resource_name ?? ''),
+      criterionId:  String(s.criterion_id  ?? ''),
+      dayOfWeek:    DAY_OF_WEEK_NUM[String(sched.day_of_week ?? '')] ?? 'MONDAY',
+      startHour:    Number(sched.start_hour   ?? 0),
+      startMinute:  MINUTE_NUM[String(sched.start_minute ?? '0')] ?? 0,
+      endHour:      Number(sched.end_hour     ?? 24),
+      endMinute:    MINUTE_NUM[String(sched.end_minute   ?? '0')] ?? 0,
+      bidModifier:  s.bid_modifier != null ? Number(s.bid_modifier) : 1.0,
+    }
+  })
+}
+
+export async function updateAdScheduleBid(
+  clientAccountId: string,
+  resourceName:    string,
+  bidModifier:     number,
+): Promise<void> {
+  if (!resourceName.startsWith('customers/')) throw new Error('Invalid resource name')
+  const customer = await getClientCustomer(clientAccountId)
+  await (customer.campaignCriteria as any).update([{
+    resource_name: resourceName,
+    bid_modifier:  bidModifier,
+  }])
+}
+
+export async function addAdScheduleEntry(
+  clientAccountId: string,
+  campaignId:      string,
+  entry: Pick<AdScheduleEntry, 'dayOfWeek' | 'startHour' | 'startMinute' | 'endHour' | 'endMinute' | 'bidModifier'>
+): Promise<{ criterionId: string }> {
+  validateCampaignId(campaignId)
+  const cleanedClientId = cleanId(clientAccountId)
+  const customer        = await getClientCustomer(cleanedClientId)
+  const resp = await (customer.campaignCriteria as any).create([{
+    campaign:     `customers/${cleanedClientId}/campaigns/${campaignId}`,
+    type:         12, // AD_SCHEDULE
+    bid_modifier: entry.bidModifier,
+    ad_schedule: {
+      day_of_week:  DAY_API_NUM[entry.dayOfWeek],
+      start_hour:   entry.startHour,
+      start_minute: MINUTE_API_NUM[entry.startMinute] ?? 0,
+      end_hour:     entry.endHour,
+      end_minute:   MINUTE_API_NUM[entry.endMinute]   ?? 0,
+    },
+  }]) as any
+  const rn: string = resp?.results?.[0]?.resource_name ?? ''
+  return { criterionId: rn.split('~').pop() ?? '' }
+}
+
+export async function removeAdScheduleEntry(
+  clientAccountId: string,
+  resourceName:    string,
+): Promise<void> {
+  if (!resourceName.startsWith('customers/')) throw new Error('Invalid resource name')
+  const customer = await getClientCustomer(clientAccountId)
+  await (customer.campaignCriteria as any).remove([resourceName])
 }

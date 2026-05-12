@@ -416,6 +416,29 @@ export function SearchTermsTab({
     }).catch(() => {})
   }
 
+  function exportCSV() {
+    const header = [
+      'Search Term', 'Status', 'Campaign', 'Ad Group',
+      'Impressions', 'Clicks', 'CTR %', `Cost (${currency})`, 'Conversions', `CPA (${currency})`,
+    ]
+    const rows = sorted.map(t => [
+      t.term, t.status, t.campaignName, t.adGroupName,
+      t.impressions, t.clicks, t.ctr.toFixed(2),
+      t.cost.toFixed(2), t.conversions.toFixed(1),
+      t.conversions > 0 ? (t.cost / t.conversions).toFixed(2) : '',
+    ])
+    const csv = [header, ...rows]
+      .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `search-terms-${startDate}-${endDate}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   // ── Shared action API handlers ─────────────────────────────────────────────
   async function handleExclude(
     term: string, termCampaignId: string, _adGroupId: string, matchType: MatchType
@@ -703,6 +726,15 @@ export function SearchTermsTab({
             ? <>{filtered.length} of {terms.length} terms</>
             : <>{terms.length} term{terms.length !== 1 ? 's' : ''}</>}
         </p>
+        {sorted.length > 0 && (
+          <button
+            onClick={exportCSV}
+            className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border border-cloud text-navy/60 hover:border-cyan/40 hover:text-navy transition-all whitespace-nowrap"
+            title="Export filtered search terms to CSV"
+          >
+            ⬇ CSV
+          </button>
+        )}
       </div>
 
       {/* ── Table ── */}

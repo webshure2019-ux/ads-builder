@@ -12,6 +12,8 @@ import { ABTestingTab }            from '@/components/dashboard/ABTestingTab'
 import { AuctionInsightsTab }      from '@/components/dashboard/AuctionInsightsTab'
 import { LocationsTab }            from '@/components/dashboard/LocationsTab'
 import { AssetsTab }               from '@/components/dashboard/AssetsTab'
+import { AdScheduleTab }          from '@/components/dashboard/AdScheduleTab'
+import { AudienceTargetsTab }     from '@/components/dashboard/AudienceTargetsTab'
 
 // ─── Maps ──────────────────────────────────────────────────────────────────────
 const AD_TYPE_MAP: Record<string, string> = {
@@ -1183,7 +1185,7 @@ function AdsTab({ ads, currency, clientId, loading, error }: {
 }
 
 // ─── Main drill-down panel ─────────────────────────────────────────────────────
-type DrillTab = 'groups' | 'keywords' | 'negatives' | 'heatmap' | 'devices' | 'rsa_copy' | 'ab_test' | 'changes' | 'search_terms' | 'auction' | 'locations' | 'assets'
+type DrillTab = 'groups' | 'keywords' | 'negatives' | 'heatmap' | 'devices' | 'rsa_copy' | 'ab_test' | 'changes' | 'search_terms' | 'auction' | 'locations' | 'assets' | 'schedule' | 'audiences'
 
 interface Props {
   campaignId:   string
@@ -1277,6 +1279,8 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
           { id: 'auction'      as DrillTab, label: '🏆 Auction', hidden: !isSearch },
           { id: 'locations'    as DrillTab, label: '📍 Locations' },
           { id: 'assets'       as DrillTab, label: '🔗 Assets'   },
+          { id: 'schedule'     as DrillTab, label: '📅 Schedule'  },
+          { id: 'audiences'    as DrillTab, label: '👥 Audiences'  },
         ]).filter(t => !(t as any).hidden).map(tab => (
           <button
             key={tab.id}
@@ -1394,6 +1398,16 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
             startDate={startDate}
             endDate={endDate}
             currency={currency}
+          />
+        ) : activeTab === 'schedule' ? (
+          <AdScheduleTab
+            clientId={clientId}
+            campaignId={campaignId}
+          />
+        ) : activeTab === 'audiences' ? (
+          <AudienceTargetsTab
+            clientId={clientId}
+            campaignId={campaignId}
           />
         ) : null
         }

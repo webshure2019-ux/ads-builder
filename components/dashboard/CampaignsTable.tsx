@@ -222,6 +222,74 @@ function ColumnPicker({ colOrder, enabledKeys, onChange }: {
   )
 }
 
+// ─── Inline name editor ────────────────────────────────────────────────────────
+function NameCell({ campaign, clientId, onUpdated }: {
+  campaign: CampaignMetrics; clientId: string; onUpdated: (name: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [value,   setValue]   = useState(campaign.name)
+  const [saving,  setSaving]  = useState(false)
+  const [error,   setError]   = useState('')
+  const ch = CHANNEL_MAP[campaign.channel_type] ?? { icon: '📋', label: campaign.channel_type }
+
+  async function save() {
+    const trimmed = value.trim()
+    if (!trimmed) { setError('Name cannot be empty'); return }
+    if (trimmed === campaign.name) { setEditing(false); return }
+    setSaving(true); setError('')
+    try {
+      const res = await fetch('/api/campaign-name', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_account_id: clientId, campaign_id: campaign.id, name: trimmed }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error)
+      onUpdated(trimmed); setEditing(false)
+    } catch (e: any) { setError(e.message) }
+    finally { setSaving(false) }
+  }
+
+  if (editing) return (
+    <div className="flex flex-col gap-1 min-w-[220px]">
+      <div className="flex items-center gap-1.5">
+        <input
+          type="text" value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setEditing(false); setValue(campaign.name) } }}
+          className="flex-1 border border-cyan rounded-lg px-2 py-1 text-sm text-navy focus:outline-none bg-white"
+          autoFocus
+          maxLength={255}
+        />
+        <button onClick={save} disabled={saving}
+          className="text-[11px] font-bold bg-cyan text-navy px-2 py-1 rounded-lg hover:bg-cyan/80 disabled:opacity-50 transition-colors">
+          {saving ? '…' : 'Save'}
+        </button>
+        <button onClick={() => { setEditing(false); setValue(campaign.name) }} className="text-[11px] text-navy/40 hover:text-navy px-1 transition-colors">✕</button>
+      </div>
+      {error && <p className="text-[10px] text-red-500">{error}</p>}
+    </div>
+  )
+
+  return (
+    <div className="flex items-center gap-3 group/namecell">
+      <span className="text-xl leading-none flex-shrink-0" title={ch.label}>{ch.icon}</span>
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5">
+          <p className="font-medium text-navy leading-snug truncate max-w-[240px]" title={campaign.name}>
+            {campaign.name}
+          </p>
+          <button
+            onClick={e => { e.stopPropagation(); setValue(campaign.name); setEditing(true) }}
+            className="opacity-0 group-hover/namecell:opacity-100 text-[10px] text-navy/30 hover:text-cyan transition-all flex-shrink-0"
+            title="Rename campaign"
+          >✏️</button>
+        </div>
+        <p className="text-[10px] text-teal mt-0.5">{ch.label}</p>
+      </div>
+    </div>
+  )
+}
+
 // ─── Inline budget editor ──────────────────────────────────────────────────────
 function BudgetCell({ campaign, clientId, currency, onUpdated }: {
   campaign: CampaignMetrics; clientId: string; currency: string; onUpdated: (b: number) => void
@@ -350,6 +418,9 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
   const [showInactive, setShowInactive] = useState(false)
   const [cloneTarget,  setCloneTarget]  = useState<CampaignMetrics | null>(null)
   const [showTemplates,setShowTemplates]= useState(false)
+  const [selectedIds,  setSelectedIds]  = useState<Set<string>>(new Set())
+  const [bulkWorking,  setBulkWorking]  = useState(false)
+  const [bulkError,    setBulkError]    = useState('')
 
   // Load saved column state (order + visibility) on mount
   useEffect(() => {
@@ -370,6 +441,10 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
     setCampaigns(prev => prev.map(c => c.id === campaignId ? { ...c, daily_budget: newBudget } : c))
   }
 
+  function handleNameUpdate(campaignId: string, newName: string) {
+    setCampaigns(prev => prev.map(c => c.id === campaignId ? { ...c, name: newName } : c))
+  }
+
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(key); setSortDir('desc') }
@@ -377,6 +452,39 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
 
   function handleStatusChange(campaignId: string, newStatus: string) {
     setCampaigns(prev => prev.map(c => c.id === campaignId ? { ...c, status: newStatus } : c))
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(Array.from(prev))
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === visible.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(visible.map(c => c.id)))
+    }
+  }
+
+  async function bulkSetStatus(status: 'ENABLED' | 'PAUSED') {
+    if (selectedIds.size === 0) return
+    setBulkWorking(true); setBulkError('')
+    const ids = Array.from(selectedIds)
+    try {
+      await Promise.all(ids.map(id =>
+        fetch('/api/campaign-status', {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ client_account_id: clientId, campaign_id: id, status }),
+        }).then(async r => { if (!r.ok) throw new Error((await r.json()).error) })
+      ))
+      setCampaigns(prev => prev.map(c => ids.includes(c.id) ? { ...c, status } : c))
+      setSelectedIds(new Set())
+    } catch (e: any) { setBulkError(e.message) }
+    finally { setBulkWorking(false) }
   }
 
   // Respect saved order; only show enabled cols
@@ -461,6 +569,35 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
             <span className="ml-1.5 text-amber-600">({sorted.length - visible.length} hidden)</span>
           )}
         </p>
+
+        {/* ── Bulk action bar (visible when rows are checked) ── */}
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-2 bg-cyan/10 border border-cyan/30 rounded-xl px-3 py-1.5">
+            <span className="text-[11px] font-bold text-navy">{selectedIds.size} selected</span>
+            <button
+              onClick={() => bulkSetStatus('ENABLED')}
+              disabled={bulkWorking}
+              className="text-[11px] font-bold px-3 py-1 rounded-lg bg-emerald-100 text-emerald-700 border border-emerald-300 hover:bg-emerald-200 disabled:opacity-50 transition-colors whitespace-nowrap"
+            >
+              {bulkWorking ? '…' : '▶ Enable All'}
+            </button>
+            <button
+              onClick={() => bulkSetStatus('PAUSED')}
+              disabled={bulkWorking}
+              className="text-[11px] font-bold px-3 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100 disabled:opacity-50 transition-colors whitespace-nowrap"
+            >
+              {bulkWorking ? '…' : '⏸ Pause All'}
+            </button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="text-[11px] text-navy/40 hover:text-navy transition-colors"
+            >
+              ✕
+            </button>
+            {bulkError && <span className="text-[10px] text-red-500">{bulkError}</span>}
+          </div>
+        )}
+
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowInactive(s => !s)}
@@ -493,6 +630,15 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
           {/* ── Header ── */}
           <thead className="sticky top-0 z-10 bg-mist">
             <tr className="border-b border-cloud">
+              <th className="w-10 px-3 py-3.5 text-center">
+                <input
+                  type="checkbox"
+                  checked={visible.length > 0 && selectedIds.size === visible.length}
+                  onChange={toggleSelectAll}
+                  className="accent-cyan w-3.5 h-3.5"
+                  title="Select all"
+                />
+              </th>
               <th
                 className="text-left px-5 py-3.5 text-[10px] font-heading font-bold uppercase tracking-wider text-teal cursor-pointer hover:text-navy transition-colors select-none whitespace-nowrap"
                 onClick={() => handleSort('name')}
@@ -523,7 +669,6 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
           {/* ── Rows ── */}
           <tbody className="divide-y divide-cloud">
             {visible.map(c => {
-              const ch          = CHANNEL_MAP[c.channel_type] ?? { icon: '📋', label: c.channel_type }
               const active      = isActive(c.status)
               const isDrillOpen = expandedId === c.id
               const learning    = isLearning(c)
@@ -533,20 +678,24 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
                 <Fragment key={c.id}>
                   <tr className={`transition-colors ${isDrillOpen ? 'bg-cyan/5 border-l-2 border-l-cyan' : 'hover:bg-mist/50'}`}>
 
-                    {/* Name + type (clickable — toggles inline drill-down) */}
-                    <td
-                      className="px-5 py-3.5 cursor-pointer group/name"
-                      onClick={() => setExpandedId(id => id === c.id ? null : c.id)}
-                      title="Click to expand ad groups & ads"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-xl leading-none flex-shrink-0" title={ch.label}>{ch.icon}</span>
-                        <div className="min-w-0">
-                          <p className="font-medium text-navy leading-snug truncate max-w-[240px] group-hover/name:text-cyan transition-colors" title={c.name}>
-                            {c.name}
-                          </p>
-                          <p className="text-[10px] text-teal mt-0.5">{ch.label}</p>
-                        </div>
+                    {/* Checkbox */}
+                    <td className="w-10 px-3 py-3.5 text-center" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(c.id)}
+                        onChange={() => toggleSelect(c.id)}
+                        className="accent-cyan w-3.5 h-3.5"
+                      />
+                    </td>
+
+                    {/* Name + type — click row to expand drill-down; ✏️ icon to rename */}
+                    <td className="px-5 py-3.5">
+                      <div
+                        className="cursor-pointer hover:text-cyan transition-colors"
+                        onClick={() => setExpandedId(id => id === c.id ? null : c.id)}
+                        title="Click to expand"
+                      >
+                        <NameCell campaign={c} clientId={clientId} onUpdated={name => handleNameUpdate(c.id, name)} />
                       </div>
                     </td>
 
@@ -604,7 +753,7 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
                   {/* ── Inline drill-down — expands directly below the campaign row ── */}
                   {isDrillOpen && (
                     <tr>
-                      <td colSpan={visibleCols.length + 5} className="p-0">
+                      <td colSpan={visibleCols.length + 6} className="p-0">
                         <div className="border-t-2 border-cyan/20 animate-in fade-in duration-150">
                           <CampaignDrillDown
                             campaignId={c.id}
@@ -628,6 +777,7 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
           {/* ── Totals footer ── */}
           <tfoot>
             <tr className="border-t-2 border-cloud/70 bg-mist">
+              <td />{/* Checkbox */}
               <td className="px-5 py-3.5">
                 <p className="text-[11px] font-heading font-bold text-navy">Total</p>
                 <p className="text-[10px] text-teal mt-0.5">{visible.length} campaign{visible.length !== 1 ? 's' : ''}</p>
