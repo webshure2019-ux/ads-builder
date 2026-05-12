@@ -347,7 +347,7 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
   const [colOrder,     setColOrder]     = useState<string[]>(DEFAULT_COL_ORDER)
   const [colKeys,      setColKeys]      = useState<Set<string>>(DEFAULT_ENABLED_KEYS)
   const [expandedId,   setExpandedId]   = useState<string | null>(null)
-  const [showInactive, setShowInactive] = useState(true)
+  const [showInactive, setShowInactive] = useState(false)
   const [cloneTarget,  setCloneTarget]  = useState<CampaignMetrics | null>(null)
   const [showTemplates,setShowTemplates]= useState(false)
 

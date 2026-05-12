@@ -409,7 +409,7 @@ function AdGroupsTab({ adGroups, currency, clientId, campaignId, startDate, endD
   const [sortDir,      setSortDir]      = useState<'asc' | 'desc'>('desc')
   const [colOrder,     setColOrder]     = useState<string[]>(DEFAULT_AG_COL_ORDER)
   const [colKeys,      setColKeys]      = useState<Set<string>>(DEFAULT_AG_ENABLED_KEYS)
-  const [showInactive, setShowInactive] = useState(true)
+  const [showInactive, setShowInactive] = useState(false)
 
   // Load saved column state on mount
   useEffect(() => {
@@ -1075,7 +1075,7 @@ function AdsTab({ ads, currency, clientId, loading, error }: {
 }) {
   const [sortBy,         setSortBy]         = useState<AdSortBy>('strength')
   const [filterStrength, setFilterStrength] = useState<AdFilter>('')
-  const [showInactive,   setShowInactive]   = useState(true)
+  const [showInactive,   setShowInactive]   = useState(false)
 
   if (loading) return <PanelSpinner label="Loading ads…" />
   if (error)   return <PanelError msg={error} />

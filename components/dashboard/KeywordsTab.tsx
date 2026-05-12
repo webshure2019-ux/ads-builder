@@ -201,7 +201,7 @@ export function KeywordsTab({ clientId, startDate, endDate, currency, campaignId
   const [search,      setSearch]      = useState('')
   const [matchFilter, setMatchFilter] = useState<MatchFilter>('')
   const [qsFilter,    setQsFilter]    = useState<QsFilter>('')
-  const [showPaused,  setShowPaused]  = useState(true)
+  const [showPaused,  setShowPaused]  = useState(false)
   const [issuesOpen,  setIssuesOpen]  = useState(true)
 
   const fetchKey = `${clientId}|${startDate}|${endDate}|${campaignId ?? ''}`
