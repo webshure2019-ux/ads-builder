@@ -35,7 +35,9 @@ export default function LoginPage() {
       {/* Glass login card */}
       <div className="glass rounded-3xl p-10 w-full max-w-sm animate-slide-up">
 
-        {/* Logo */}
+        {/* Logo — `unoptimized` bypasses the Next.js image optimizer, which
+            refuses to process SVGs by default (the file is actually a PNG
+            wrapped in SVG markup, so optimization adds nothing anyway). */}
         <div className="flex justify-center mb-8">
           <Image
             src="/logo.svg"
@@ -43,6 +45,7 @@ export default function LoginPage() {
             width={180}
             height={58}
             priority
+            unoptimized
             className="h-12 w-auto object-contain"
           />
         </div>

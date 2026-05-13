@@ -20,7 +20,8 @@ export function Nav({ page, action }: NavProps) {
          style={{ borderBottom: '1px solid var(--border-lo)' }}>
       <div className="w-full px-5 h-14 flex items-center gap-4">
 
-        {/* Logo */}
+        {/* Logo — `unoptimized` bypasses the Next.js image optimizer (which
+            refuses SVGs by default; ours is a PNG-in-SVG anyway). */}
         <Link href="/" className="flex-shrink-0 flex items-center h-9">
           <Image
             src="/logo.svg"
@@ -28,6 +29,7 @@ export function Nav({ page, action }: NavProps) {
             width={140}
             height={45}
             priority
+            unoptimized
             className="h-8 w-auto object-contain"
           />
         </Link>
