@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import type { SharedBudget } from '@/lib/google-ads'
 
 // ─── Inline budget amount editor ──────────────────────────────────────────────
@@ -75,6 +75,22 @@ export function SharedBudgetsSection({ clientId, currency }: {
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
   const fetched = useRef('')
+
+  // When the selected client changes while the section is already open, re-fetch
+  useEffect(() => {
+    if (open && fetched.current !== clientId) {
+      fetched.current = clientId
+      setLoading(true); setError(''); setBudgets([])
+      fetch(`/api/shared-budgets?client_account_id=${encodeURIComponent(clientId)}`)
+        .then(async r => {
+          const d = await r.json()
+          if (!r.ok) throw new Error(d.error)
+          setBudgets(d.budgets ?? [])
+        })
+        .catch(e => { setError(e.message); fetched.current = '' })
+        .finally(() => setLoading(false))
+    }
+  }, [clientId, open])
 
   function toggle() {
     setOpen(o => !o)

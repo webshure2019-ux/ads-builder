@@ -18,6 +18,10 @@ import { ClientReportSection }     from '@/components/dashboard/ClientReportSect
 import { RecommendationsSection }  from '@/components/dashboard/RecommendationsSection'
 import { AIAnalystSection }        from '@/components/dashboard/AIAnalystSection'
 import { SharedBudgetsSection }    from '@/components/dashboard/SharedBudgetsSection'
+import { WastedSpendSection }      from '@/components/dashboard/WastedSpendSection'
+import { QualityScoreSection }     from '@/components/dashboard/QualityScoreSection'
+import { TopMoversSection }        from '@/components/dashboard/TopMoversSection'
+import { RSAHealthSection }        from '@/components/dashboard/RSAHealthSection'
 
 interface GoogleClient { id: string; name: string }
 
@@ -858,6 +862,42 @@ export function ClientDashboard() {
           {clientId && stats && (
             <div className="mt-2">
               <SharedBudgetsSection clientId={clientId} currency={stats.currency} />
+            </div>
+          )}
+
+          {/* ── Wasted Spend ── */}
+          {clientId && stats && rs && re && (
+            <div className="mt-2">
+              <WastedSpendSection clientId={clientId} startDate={rs} endDate={re} currency={stats.currency} />
+            </div>
+          )}
+
+          {/* ── Top Movers ── */}
+          {clientId && campaigns.length > 0 && stats && rs && re && (
+            <div className="mt-2">
+              <TopMoversSection
+                clientId={clientId}
+                campaigns={campaigns}
+                startDate={rs}
+                endDate={re}
+                prevStartDate={getPreviousRange(rs, re).start}
+                prevEndDate={getPreviousRange(rs, re).end}
+                currency={stats.currency}
+              />
+            </div>
+          )}
+
+          {/* ── Quality Score Tracker ── */}
+          {clientId && rs && re && (
+            <div className="mt-2">
+              <QualityScoreSection clientId={clientId} startDate={rs} endDate={re} />
+            </div>
+          )}
+
+          {/* ── RSA Ad Strength ── */}
+          {clientId && stats && (
+            <div className="mt-2">
+              <RSAHealthSection clientId={clientId} />
             </div>
           )}
 

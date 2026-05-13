@@ -30,9 +30,8 @@ function bidColor(modifier: number): string {
 }
 
 function fmt(h: number, m: number) {
-  const mm = m === 0 ? '00' : String(m)
   if (h === 24) return '24:00'
-  return `${h}:${mm}`
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
 // ─── Inline bid modifier editor ───────────────────────────────────────────────
@@ -152,7 +151,7 @@ function AddEntryForm({ clientId, campaignId, onAdded }: {
       const d = await res.json()
       if (!res.ok) throw new Error(d.error)
       onAdded({
-        resourceName: `customers/~campaigns/${campaignId}/campaignCriteria/${d.criterionId}`,
+        resourceName: d.resourceName,
         criterionId: String(d.criterionId),
         dayOfWeek: day, startHour: startH, startMinute: startM,
         endHour: endH, endMinute: endM, bidModifier: modifier,
@@ -199,13 +198,13 @@ function AddEntryForm({ clientId, campaignId, onAdded }: {
         <div>
           <label className="text-[10px] text-navy/50 block mb-1">End</label>
           <div className="flex items-center gap-1">
-            <select value={endH} onChange={e => setEndH(Number(e.target.value))}
+            <select value={endH} onChange={e => { const h = Number(e.target.value); setEndH(h); if (h === 24) setEndM(0) }}
               className="border border-cloud rounded-lg px-2 py-1.5 text-xs text-navy bg-white focus:outline-none focus:border-cyan">
               {HOURS.map(h => <option key={h} value={h}>{h === 24 ? '24' : String(h).padStart(2,'0')}</option>)}
             </select>
             <span className="text-navy/40 text-xs">:</span>
-            <select value={endM} onChange={e => setEndM(Number(e.target.value))}
-              className="border border-cloud rounded-lg px-2 py-1.5 text-xs text-navy bg-white focus:outline-none focus:border-cyan">
+            <select value={endM} onChange={e => setEndM(Number(e.target.value))} disabled={endH === 24}
+              className="border border-cloud rounded-lg px-2 py-1.5 text-xs text-navy bg-white focus:outline-none focus:border-cyan disabled:opacity-50">
               {MINUTES.map(m => <option key={m} value={m}>{String(m).padStart(2,'0')}</option>)}
             </select>
           </div>

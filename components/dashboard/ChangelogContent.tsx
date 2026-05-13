@@ -9,6 +9,12 @@ import type { FeatureRequest } from '@/app/api/feature-requests/route'
 // ("~14:30 SAST"). Newest first always.
 
 const FEATURES: { emoji: string; text: string; date: string }[] = [
+  { emoji: '✍️', text: 'RSA Ad Strength — account-wide distribution of Excellent/Good/Average/Poor RSA ads with per-campaign breakdown', date: '13 May 2026' },
+  { emoji: '📈', text: 'Top Movers — biggest week-over-week changes in spend or conversions per campaign; instant answer to "what changed?"', date: '13 May 2026' },
+  { emoji: '📊', text: 'Quality Score Tracker — take QS snapshots stored in Supabase; track distribution trends over time per client', date: '13 May 2026' },
+  { emoji: '🌍', text: 'Geo Performance tab — per-campaign geographic breakdown by city/region/country with sortable metrics and CPA', date: '13 May 2026' },
+  { emoji: '🗑', text: 'Wasted Spend — consolidated view of zero-conversion keywords, low QS keywords (≤4), and wasted search terms', date: '13 May 2026' },
+  { emoji: '💡', text: 'Bid Strategy tab — view and switch bid strategies (Target CPA/ROAS, Maximize Conv/Value, Manual CPC) per campaign', date: '13 May 2026' },
   { emoji: '💰', text: 'Shared Budgets section — view all account-level shared budget pools with campaigns, edit daily amounts inline', date: '12 May 2026' },
   { emoji: '👥', text: 'Audiences tab — per-campaign audience targets with inline bid modifier editing (Observation vs Targeting mode)', date: '12 May 2026' },
   { emoji: '📅', text: 'Ad Schedule tab — view and manage ad scheduling bid adjustments by day and time slot; add/remove/edit entries', date: '12 May 2026' },
@@ -31,6 +37,10 @@ const FEATURES: { emoji: string; text: string; date: string }[] = [
 ]
 
 const FIXES: { text: string; date: string }[] = [
+  { text: 'Fixed RSA Health Section — client-switch re-fetch was firing during React render instead of in a useEffect, causing double-fetches and stale data in Strict Mode', date: '13 May 2026' },
+  { text: 'Fixed Wasted Spend Section — data now auto-refreshes when switching clients or changing the date range while the section is open', date: '13 May 2026' },
+  { text: 'Fixed Quality Score Tracker — snapshot history now reloads when switching clients while the section is open', date: '13 May 2026' },
+  { text: 'Fixed Bid Strategy tab — numeric API strategy codes (e.g. "9") now correctly map to their string name so the correct strategy button is highlighted in the edit panel', date: '13 May 2026' },
   { text: 'Fixed Assets tab GAQL error — campaign.id must appear in SELECT when used in WHERE; added to both the structure and metrics queries', date: '11 May 2026' },
   { text: 'Improved expired-token error — when the Google Ads refresh token expires the app now shows a clear message with exact Vercel steps instead of a generic failure', date: '11 May 2026' },
   { text: 'Fixed Auction Insights tab — api field auction_insight.domain was removed in Google Ads API v23; now correctly reads from segments.auction_insight_domain', date: '8 May 2026, ~15:00 SAST' },

@@ -14,6 +14,8 @@ import { LocationsTab }            from '@/components/dashboard/LocationsTab'
 import { AssetsTab }               from '@/components/dashboard/AssetsTab'
 import { AdScheduleTab }          from '@/components/dashboard/AdScheduleTab'
 import { AudienceTargetsTab }     from '@/components/dashboard/AudienceTargetsTab'
+import { BidStrategyTab }         from '@/components/dashboard/BidStrategyTab'
+import { GeoPerformanceTab }      from '@/components/dashboard/GeoPerformanceTab'
 
 // ─── Maps ──────────────────────────────────────────────────────────────────────
 const AD_TYPE_MAP: Record<string, string> = {
@@ -1185,7 +1187,7 @@ function AdsTab({ ads, currency, clientId, loading, error }: {
 }
 
 // ─── Main drill-down panel ─────────────────────────────────────────────────────
-type DrillTab = 'groups' | 'keywords' | 'negatives' | 'heatmap' | 'devices' | 'rsa_copy' | 'ab_test' | 'changes' | 'search_terms' | 'auction' | 'locations' | 'assets' | 'schedule' | 'audiences'
+type DrillTab = 'groups' | 'keywords' | 'negatives' | 'heatmap' | 'devices' | 'rsa_copy' | 'ab_test' | 'changes' | 'search_terms' | 'auction' | 'locations' | 'assets' | 'schedule' | 'audiences' | 'bid_strategy' | 'geo'
 
 interface Props {
   campaignId:   string
@@ -1281,6 +1283,8 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
           { id: 'assets'       as DrillTab, label: '🔗 Assets'   },
           { id: 'schedule'     as DrillTab, label: '📅 Schedule'  },
           { id: 'audiences'    as DrillTab, label: '👥 Audiences'  },
+          { id: 'bid_strategy' as DrillTab, label: '💡 Bid Strategy' },
+          { id: 'geo'          as DrillTab, label: '🌍 Geo'        },
         ]).filter(t => !(t as any).hidden).map(tab => (
           <button
             key={tab.id}
@@ -1408,6 +1412,20 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
           <AudienceTargetsTab
             clientId={clientId}
             campaignId={campaignId}
+          />
+        ) : activeTab === 'bid_strategy' ? (
+          <BidStrategyTab
+            clientId={clientId}
+            campaignId={campaignId}
+            currency={currency}
+          />
+        ) : activeTab === 'geo' ? (
+          <GeoPerformanceTab
+            clientId={clientId}
+            campaignId={campaignId}
+            startDate={startDate}
+            endDate={endDate}
+            currency={currency}
           />
         ) : null
         }

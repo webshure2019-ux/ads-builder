@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     if (!entry)             return NextResponse.json({ error: 'entry required' },              { status: 400 })
 
     const result = await addAdScheduleEntry(client_account_id, campaign_id, entry)
-    return NextResponse.json({ ok: true, criterionId: result.criterionId })
+    return NextResponse.json({ ok: true, criterionId: result.criterionId, resourceName: result.resourceName })
   } catch (err: unknown) {
     return NextResponse.json(
       { error: googleAdsErrorMessage(err, 'Failed to add ad schedule entry') },

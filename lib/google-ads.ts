@@ -3141,7 +3141,7 @@ export async function addAdScheduleEntry(
   clientAccountId: string,
   campaignId:      string,
   entry: Pick<AdScheduleEntry, 'dayOfWeek' | 'startHour' | 'startMinute' | 'endHour' | 'endMinute' | 'bidModifier'>
-): Promise<{ criterionId: string }> {
+): Promise<{ criterionId: string; resourceName: string }> {
   validateCampaignId(campaignId)
   const cleanedClientId = cleanId(clientAccountId)
   const customer        = await getClientCustomer(cleanedClientId)
@@ -3158,7 +3158,7 @@ export async function addAdScheduleEntry(
     },
   }]) as any
   const rn: string = resp?.results?.[0]?.resource_name ?? ''
-  return { criterionId: rn.split('~').pop() ?? '' }
+  return { criterionId: rn.split('~').pop() ?? '', resourceName: rn }
 }
 
 export async function removeAdScheduleEntry(
@@ -3168,4 +3168,264 @@ export async function removeAdScheduleEntry(
   if (!resourceName.startsWith('customers/')) throw new Error('Invalid resource name')
   const customer = await getClientCustomer(clientAccountId)
   await (customer.campaignCriteria as any).remove([resourceName])
+}
+
+// ─── Bid Strategy ──────────────────────────────────────────────────────────────
+
+export interface BidStrategyData {
+  type:            string          // e.g. 'TARGET_CPA', 'MAXIMIZE_CONVERSIONS'
+  systemStatus:    string          // e.g. 'LEARNING', 'ELIGIBLE'
+  targetCpaMicros: number | null   // micros; TARGET_CPA + optional MAX_CONV target
+  targetRoas:      number | null   // multiplier; TARGET_ROAS + optional MAX_CONV_VALUE target
+  eCpcEnabled:     boolean         // MANUAL_CPC only
+}
+
+export async function getBidStrategy(
+  clientAccountId: string,
+  campaignId: string,
+): Promise<BidStrategyData> {
+  validateCampaignId(campaignId)
+  const customer = await getClientCustomer(clientAccountId)
+  const results = await customer.query(`
+    SELECT
+      campaign.bidding_strategy_type,
+      campaign.bidding_strategy_system_status,
+      campaign.target_cpa.target_cpa_micros,
+      campaign.target_roas.target_roas,
+      campaign.maximize_conversions.target_cpa_micros,
+      campaign.maximize_conversion_value.target_roas,
+      campaign.manual_cpc.enhanced_cpc_enabled
+    FROM campaign
+    WHERE campaign.id = ${campaignId}
+      AND campaign.status != 'REMOVED'
+    LIMIT 1
+  `) as any[]
+
+  if (!results.length) throw new Error('Campaign not found')
+  const r    = results[0]
+  const type = String(r.campaign?.bidding_strategy_type ?? '')
+
+  let targetCpaMicros: number | null = null
+  let targetRoas:      number | null = null
+
+  if (type === 'TARGET_CPA' || type === '6') {
+    const v = Number(r.campaign?.target_cpa?.target_cpa_micros ?? 0)
+    targetCpaMicros = v > 0 ? v : null
+  } else if (type === 'TARGET_ROAS' || type === '18') {
+    const v = Number(r.campaign?.target_roas?.target_roas ?? 0)
+    targetRoas = v > 0 ? v : null
+  } else if (type === 'MAXIMIZE_CONVERSIONS' || type === '9') {
+    const v = Number(r.campaign?.maximize_conversions?.target_cpa_micros ?? 0)
+    targetCpaMicros = v > 0 ? v : null
+  } else if (type === 'MAXIMIZE_CONVERSION_VALUE' || type === '10') {
+    const v = Number(r.campaign?.maximize_conversion_value?.target_roas ?? 0)
+    targetRoas = v > 0 ? v : null
+  }
+
+  return {
+    type,
+    systemStatus:    String(r.campaign?.bidding_strategy_system_status ?? ''),
+    targetCpaMicros,
+    targetRoas,
+    eCpcEnabled:     Boolean(r.campaign?.manual_cpc?.enhanced_cpc_enabled ?? false),
+  }
+}
+
+export async function updateBidStrategy(
+  clientAccountId: string,
+  campaignId: string,
+  strategyType: string,
+  params: { targetCpaMicros?: number; targetRoas?: number; eCpcEnabled?: boolean },
+): Promise<void> {
+  validateCampaignId(campaignId)
+  const cleanedId = cleanId(clientAccountId)
+  const customer  = await getClientCustomer(cleanedId)
+
+  const payload: any = {
+    resource_name: `customers/${cleanedId}/campaigns/${campaignId}`,
+  }
+
+  switch (strategyType) {
+    case 'TARGET_CPA':
+      payload.target_cpa = { target_cpa_micros: params.targetCpaMicros ?? 1_000_000 }
+      break
+    case 'TARGET_ROAS':
+      payload.target_roas = { target_roas: params.targetRoas ?? 1 }
+      break
+    case 'MAXIMIZE_CONVERSIONS':
+      payload.maximize_conversions = params.targetCpaMicros
+        ? { target_cpa_micros: params.targetCpaMicros } : {}
+      break
+    case 'MAXIMIZE_CONVERSION_VALUE':
+      payload.maximize_conversion_value = params.targetRoas
+        ? { target_roas: params.targetRoas } : {}
+      break
+    case 'MAXIMIZE_CLICKS':
+      payload.maximize_clicks = {}
+      break
+    case 'MANUAL_CPC':
+    default:
+      payload.manual_cpc = { enhanced_cpc_enabled: params.eCpcEnabled ?? false }
+      break
+  }
+
+  await (customer.campaigns as any).update([payload])
+}
+
+// ─── Geographic Performance ────────────────────────────────────────────────────
+
+export interface GeoPerformanceRow {
+  locationId:   string   // geoTargets/{id}
+  locationName: string
+  locationType: 'city' | 'region' | 'country' | 'other'
+  impressions:  number
+  clicks:       number
+  cost:         number
+  conversions:  number
+  ctr:          number   // 0–100 %
+}
+
+export async function getGeoPerformance(
+  clientAccountId: string,
+  campaignId: string,
+  startDate: string,
+  endDate: string,
+): Promise<GeoPerformanceRow[]> {
+  validateCampaignId(campaignId)
+  validateDate(startDate, 'start_date')
+  validateDate(endDate,   'end_date')
+  const customer = await getClientCustomer(clientAccountId)
+
+  const results = await customer.query(`
+    SELECT
+      geographic_view.location_type,
+      geographic_view.country_criterion_id,
+      segments.geo_target_city,
+      segments.geo_target_region,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.cost_micros,
+      metrics.conversions,
+      metrics.ctr
+    FROM geographic_view
+    WHERE campaign.id = ${campaignId}
+      AND segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND metrics.impressions > 0
+    ORDER BY metrics.cost_micros DESC
+    LIMIT 200
+  `) as any[]
+
+  // Collect unique geo target resource names
+  const idSet = new Set<string>()
+  for (const r of results) {
+    const city   = r.segments?.geo_target_city
+    const region = r.segments?.geo_target_region
+    if (city)   idSet.add(city)
+    if (region) idSet.add(region)
+  }
+
+  // Batch-fetch location names from geo_target_constant
+  const nameMap = new Map<string, string>()
+  if (idSet.size > 0) {
+    const ids = Array.from(idSet)
+    // Build IN clause with quoted resource names
+    const inClause = ids.map(id => `'${id}'`).join(', ')
+    try {
+      const geoResults = await customer.query(`
+        SELECT
+          geo_target_constant.resource_name,
+          geo_target_constant.name,
+          geo_target_constant.target_type
+        FROM geo_target_constant
+        WHERE geo_target_constant.resource_name IN (${inClause})
+      `) as any[]
+      for (const g of geoResults) {
+        nameMap.set(
+          String(g.geo_target_constant?.resource_name ?? ''),
+          String(g.geo_target_constant?.name ?? ''),
+        )
+      }
+    } catch {
+      // Name lookup failed — show IDs instead
+    }
+  }
+
+  // Group by location (prefer city, fall back to region)
+  const byLocation = new Map<string, GeoPerformanceRow>()
+  for (const r of results) {
+    const city   = r.segments?.geo_target_city   ? String(r.segments.geo_target_city)   : null
+    const region = r.segments?.geo_target_region ? String(r.segments.geo_target_region) : null
+    const locId  = city ?? region ?? `country_${r.geographic_view?.country_criterion_id ?? 'unknown'}`
+    const locName = nameMap.get(locId)
+      ?? (locId.startsWith('geoTargets/') ? locId.replace('geoTargets/', 'Location ') : locId)
+
+    const locType: GeoPerformanceRow['locationType'] = city ? 'city' : region ? 'region' : 'country'
+
+    const prev = byLocation.get(locId)
+    const impr = Number(r.metrics?.impressions ?? 0)
+    const clk  = Number(r.metrics?.clicks ?? 0)
+    const cost = (Number(r.metrics?.cost_micros ?? 0)) / 1_000_000
+    const conv = Number(r.metrics?.conversions ?? 0)
+
+    if (prev) {
+      prev.impressions += impr
+      prev.clicks      += clk
+      prev.cost        += cost
+      prev.conversions += conv
+    } else {
+      byLocation.set(locId, {
+        locationId: locId, locationName: locName, locationType: locType,
+        impressions: impr, clicks: clk, cost, conversions: conv, ctr: 0,
+      })
+    }
+  }
+
+  return Array.from(byLocation.values())
+    .map(row => ({
+      ...row,
+      cost:        Math.round(row.cost * 100) / 100,
+      conversions: Math.round(row.conversions * 100) / 100,
+      ctr:         row.impressions > 0 ? Math.round((row.clicks / row.impressions) * 10000) / 100 : 0,
+    }))
+    .sort((a, b) => b.cost - a.cost)
+    .slice(0, 50)
+}
+
+// ─── RSA Health ────────────────────────────────────────────────────────────────
+
+export interface RSAHealthRow {
+  campaignId:   string
+  campaignName: string
+  adGroupName:  string
+  adId:         string
+  adStrength:   string   // POOR | AVERAGE | GOOD | EXCELLENT | PENDING | UNSPECIFIED
+}
+
+export async function getRSAHealth(
+  clientAccountId: string,
+): Promise<RSAHealthRow[]> {
+  const customer = await getClientCustomer(clientAccountId)
+  const results = await customer.query(`
+    SELECT
+      campaign.id,
+      campaign.name,
+      ad_group.name,
+      ad_group_ad.ad.id,
+      ad_group_ad.ad_strength
+    FROM ad_group_ad
+    WHERE ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD'
+      AND campaign.status != 'REMOVED'
+      AND ad_group.status != 'REMOVED'
+      AND ad_group_ad.status != 'REMOVED'
+    ORDER BY campaign.id
+    LIMIT 2000
+  `) as any[]
+
+  return results.map(r => ({
+    campaignId:   String(r.campaign?.id   ?? ''),
+    campaignName: String(r.campaign?.name ?? ''),
+    adGroupName:  String(r.ad_group?.name ?? ''),
+    adId:         String(r.ad_group_ad?.ad?.id ?? ''),
+    adStrength:   String(r.ad_group_ad?.ad_strength ?? 'UNSPECIFIED'),
+  }))
 }
