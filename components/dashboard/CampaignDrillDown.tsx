@@ -1277,7 +1277,7 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
           { id: 'rsa_copy'     as DrillTab, label: '✍️ RSA Copy', hidden: isPMax },
           { id: 'ab_test'      as DrillTab, label: '🧪 A/B Test', hidden: isPMax },
           { id: 'changes'      as DrillTab, label: '📋 Changes'   },
-          { id: 'search_terms' as DrillTab, label: '🔍 Search Terms' },
+          { id: 'search_terms' as DrillTab, label: '🔍 Search Terms', hidden: isPMax },
           { id: 'auction'      as DrillTab, label: '🏆 Auction', hidden: !isSearch },
           { id: 'locations'    as DrillTab, label: '📍 Locations' },
           { id: 'assets'       as DrillTab, label: '🔗 Assets'   },

@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect } from 'react'
 import type { CampaignMetrics } from '@/lib/google-ads'
 
 interface Mover {
@@ -35,20 +35,24 @@ export function TopMoversSection({ clientId, campaigns, startDate, endDate, prev
 
   function toggle() {
     setOpen(o => !o)
-    const key = `${clientId}|${prevStartDate}|${prevEndDate}`
-    if (!open && fetchedKey.current !== key) {
-      fetchedKey.current = key
-      setLoading(true); setError('')
-      fetch(`/api/campaign-stats?client_account_id=${encodeURIComponent(clientId)}&start_date=${prevStartDate}&end_date=${prevEndDate}`)
-        .then(async r => {
-          const d = await r.json()
-          if (!r.ok) throw new Error(d.error)
-          setPrevCampaigns(d.campaigns ?? [])
-        })
-        .catch(e => { setError(e.message); fetchedKey.current = '' })
-        .finally(() => setLoading(false))
-    }
   }
+
+  // Fetch (or re-fetch on client/date change) whenever the section is open and the key changes
+  useEffect(() => {
+    if (!open) return
+    const key = `${clientId}|${prevStartDate}|${prevEndDate}`
+    if (fetchedKey.current === key) return
+    fetchedKey.current = key
+    setLoading(true); setError('')
+    fetch(`/api/campaign-stats?client_account_id=${encodeURIComponent(clientId)}&start_date=${prevStartDate}&end_date=${prevEndDate}`)
+      .then(async r => {
+        const d = await r.json()
+        if (!r.ok) throw new Error(d.error)
+        setPrevCampaigns(d.campaigns ?? [])
+      })
+      .catch(e => { setError(e.message); fetchedKey.current = '' })
+      .finally(() => setLoading(false))
+  }, [clientId, prevStartDate, prevEndDate, open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const movers: { gainers: Mover[]; decliners: Mover[] } = useMemo(() => {
     if (!prevCampaigns.length || !campaigns.length) return { gainers: [], decliners: [] }

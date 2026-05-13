@@ -37,6 +37,8 @@ const FEATURES: { emoji: string; text: string; date: string }[] = [
 ]
 
 const FIXES: { text: string; date: string }[] = [
+  { text: 'Fixed Search Terms tab — was incorrectly shown for Performance Max campaigns (which don\'t expose traditional search terms); now hidden for PMax alongside Keywords, RSA Copy, and A/B Test tabs', date: '13 May 2026' },
+  { text: 'Fixed Top Movers — previous-period data now auto-refreshes when the date range changes while the section is open (was stuck showing stale data)', date: '13 May 2026' },
   { text: 'Fixed RSA Health Section — client-switch re-fetch was firing during React render instead of in a useEffect, causing double-fetches and stale data in Strict Mode', date: '13 May 2026' },
   { text: 'Fixed Wasted Spend Section — data now auto-refreshes when switching clients or changing the date range while the section is open', date: '13 May 2026' },
   { text: 'Fixed Quality Score Tracker — snapshot history now reloads when switching clients while the section is open', date: '13 May 2026' },
