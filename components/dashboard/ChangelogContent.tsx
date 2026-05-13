@@ -9,6 +9,7 @@ import type { FeatureRequest } from '@/app/api/feature-requests/route'
 // ("~14:30 SAST"). Newest first always.
 
 const FEATURES: { emoji: string; text: string; date: string }[] = [
+  { emoji: '◧', text: 'Expandable section rail — click the chevron at the top of the left rail to expand it from 56 px icon-only to 208 px with section labels, group headers (Overview / AI / Spend / Health / Movers & Search), and inline keyboard-shortcut hints. State persists across reloads.', date: '13 May 2026' },
   { emoji: '🚀', text: 'Productivity redesign — sticky top control bar (client + date + compare always visible), left section rail to jump to any insight in one click, side-panel drill-down so the campaigns list stays in view while inspecting a campaign, and compact KPI strip with sparklines. Page-level scrolling almost eliminated.', date: '13 May 2026' },
   { emoji: '⌨️', text: 'Command palette (⌘K / Ctrl+K) — fuzzy search across clients, campaigns, sections, and date presets. Plus keyboard shortcuts: / to filter campaigns, [ ] to cycle date presets, j/k or ↑/↓ to move between campaigns in the drill-down, Esc to close panels.', date: '13 May 2026' },
   { emoji: '📌', text: 'Campaigns table — frozen Campaign name column (scroll horizontally without losing the row label), Dense/Cozy density toggle (persisted), and hover-reveal Pause/Clone actions to declutter the row.', date: '13 May 2026' },
