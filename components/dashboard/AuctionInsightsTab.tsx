@@ -41,17 +41,19 @@ function SortBtn({
 }
 
 export function AuctionInsightsTab({ clientId, campaignId, startDate, endDate }: Props) {
-  const [rows,    setRows]    = useState<AuctionInsightRow[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('impressionShare')
-  const [sortAsc, setSortAsc] = useState(false)
+  const [rows,         setRows]         = useState<AuctionInsightRow[]>([])
+  const [loading,      setLoading]      = useState(false)
+  const [error,        setError]        = useState('')
+  const [accessDenied, setAccessDenied] = useState(false)
+  const [accessMsg,    setAccessMsg]    = useState('')
+  const [sortKey,      setSortKey]      = useState<SortKey>('impressionShare')
+  const [sortAsc,      setSortAsc]      = useState(false)
   const fetched = useRef('')
 
   function doFetch() {
     const key = `${campaignId}-${startDate}-${endDate}`
     fetched.current = key
-    setLoading(true); setError('')
+    setLoading(true); setError(''); setAccessDenied(false)
     const qs = new URLSearchParams({
       client_account_id: clientId,
       campaign_id:       campaignId,
@@ -62,7 +64,13 @@ export function AuctionInsightsTab({ clientId, campaignId, startDate, endDate }:
       .then(async r => {
         const d = await r.json()
         if (!r.ok) throw new Error(d.error ?? 'Failed to load')
-        setRows(d.rows ?? [])
+        if (d.accessDenied) {
+          setAccessDenied(true)
+          setAccessMsg(d.message ?? '')
+          setRows([])
+        } else {
+          setRows(d.rows ?? [])
+        }
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
@@ -98,6 +106,31 @@ export function AuctionInsightsTab({ clientId, campaignId, startDate, endDate }:
         >
           Retry
         </button>
+      </div>
+    )
+  }
+
+  if (accessDenied) {
+    return (
+      <div
+        className="rounded-2xl px-5 py-8 mx-1 my-2 flex items-start gap-4"
+        style={{
+          background: 'rgba(255, 138, 48, 0.08)',
+          border:     '1px solid rgba(255, 138, 48, 0.30)',
+        }}
+      >
+        <span className="text-3xl flex-shrink-0">🔒</span>
+        <div className="space-y-2 min-w-0">
+          <p className="font-heading font-bold text-sm" style={{ color: 'var(--text-1)' }}>
+            Auction Insights is gated by Google
+          </p>
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>
+            {accessMsg || 'These metrics require a developer-token allowlist that Google currently does not accept new applicants for.'}
+          </p>
+          <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+            Workaround: open the same campaign in the Google Ads UI → Insights & reports → Auction insights.
+          </p>
+        </div>
       </div>
     )
   }

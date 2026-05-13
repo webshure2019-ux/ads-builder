@@ -41,7 +41,7 @@ const FEATURES: { emoji: string; text: string; date: string }[] = [
 ]
 
 const FIXES: { text: string; date: string }[] = [
-  { text: 'Fixed Auction Insights tab — Google Ads API v23 removed the `auction_insight` resource as a top-level FROM target; rewrote the query to FROM campaign with segments.auction_insight_domain (the metric set is now exposed on the campaign view).', date: '13 May 2026' },
+  { text: 'Auction Insights now degrades gracefully — Google has closed the developer-token allowlist for auction-insight metrics, so the API returns 403 for most accounts. The tab now shows a clear "gated by Google" notice with a workaround instead of a red error. Query rewritten for v23 (`FROM campaign + segments.auction_insight_domain`) so as soon as the account regains allowlist access it will start showing data again.', date: '13 May 2026' },
   { text: 'Fixed Locations tab performance metrics — `location_view.targeting_location` was removed in API v23, so per-location performance was silently coming back as zeros (the query failed in a try/catch). Now reads `location_view.resource_name` and matches metrics to campaign-criterion rows by criterion_id.', date: '13 May 2026' },
   { text: 'Suppressed harmless google-auth GCE metadata probe warnings in Vercel logs — added METADATA_SERVER_DETECTION=none so the auth library skips the wasted GCE detection path (we auth via refresh token).', date: '13 May 2026' },
   { text: 'Fixed logo intermittent breakage — the Webshure logo is a PNG-in-SVG wrapper; Next.js refuses SVGs in its image optimizer by default, leading to cached 400s. Both <Image> usages now opt out of the optimizer (`unoptimized`) so the file is fetched directly.', date: '13 May 2026' },
