@@ -21,33 +21,76 @@ function MoonIcon() {
   )
 }
 
+function AutoIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="M12 3 a 9 9 0 0 1 0 18 Z" fill="currentColor"/>
+    </svg>
+  )
+}
+
+type ThemeState = 'light' | 'dark' | 'auto'
+
+function readState(): ThemeState {
+  if (typeof window === 'undefined') return 'auto'
+  const stored = localStorage.getItem('theme')
+  if (stored === 'light' || stored === 'dark') return stored
+  return 'auto'
+}
+
+function systemIsDark(): boolean {
+  return typeof window !== 'undefined'
+    && window.matchMedia('(prefers-color-scheme: dark)').matches
+}
+
+function applyTheme(state: ThemeState) {
+  const effective = state === 'auto' ? (systemIsDark() ? 'dark' : 'light') : state
+  document.documentElement.classList.toggle('dark', effective === 'dark')
+}
+
 export function ThemeToggle() {
-  // null = not yet mounted (avoids server/client mismatch)
-  const [dark, setDark] = useState<boolean | null>(null)
+  const [state, setState] = useState<ThemeState | null>(null)
 
   useEffect(() => {
-    setDark(document.documentElement.classList.contains('dark'))
+    setState(readState())
+
+    // When in auto mode, follow live OS theme changes (e.g. macOS sunset switch)
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = () => {
+      if (readState() === 'auto') applyTheme('auto')
+    }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
   }, [])
 
-  function toggle() {
-    const isDark = document.documentElement.classList.toggle('dark')
-    try { localStorage.setItem('theme', isDark ? 'dark' : 'light') } catch {}
-    setDark(isDark)
+  function cycle() {
+    // light → dark → auto → light
+    const next: ThemeState = state === 'light' ? 'dark' : state === 'dark' ? 'auto' : 'light'
+    try {
+      if (next === 'auto') localStorage.removeItem('theme')
+      else localStorage.setItem('theme', next)
+    } catch {}
+    applyTheme(next)
+    setState(next)
   }
 
-  // Render a placeholder while mounting to avoid hydration mismatch
-  if (dark === null) {
+  if (state === null) {
     return <div className="w-9 h-9 rounded-full glass opacity-0" aria-hidden />
   }
 
+  const label = state === 'light' ? 'Light mode' : state === 'dark' ? 'Dark mode' : 'Auto (system)'
+  const icon  = state === 'light' ? <SunIcon /> : state === 'dark' ? <MoonIcon /> : <AutoIcon />
+
   return (
     <button
-      onClick={toggle}
-      aria-label="Toggle light / dark mode"
+      onClick={cycle}
+      aria-label={`Theme: ${label}. Click to cycle.`}
+      title={`${label} — click to cycle`}
       className="w-9 h-9 flex items-center justify-center rounded-full glass hover:scale-105 active:scale-95 transition-all"
       style={{ color: 'var(--text-2)' }}
     >
-      {dark ? <SunIcon /> : <MoonIcon />}
+      {icon}
     </button>
   )
 }

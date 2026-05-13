@@ -405,20 +405,54 @@ function exportCSV(campaigns: CampaignMetrics[], currency: string, visibleCols: 
 }
 
 // ─── Main component ────────────────────────────────────────────────────────────
-export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId, startDate, endDate }: {
-  campaigns:     CampaignMetrics[]
-  currency:      string
-  clientId:      string
-  startDate:     string
-  endDate:       string
+export function CampaignsTable({
+  campaigns: initialCampaigns, currency, clientId, startDate, endDate,
+  selectedCampaignId, onSelectCampaign,
+}: {
+  campaigns:           CampaignMetrics[]
+  currency:            string
+  clientId:            string
+  startDate:           string
+  endDate:             string
+  /** When provided, drill-down state is controlled by the parent and the inline
+   *  drill-down row is suppressed (parent renders it in a side panel). */
+  selectedCampaignId?: string | null
+  onSelectCampaign?:   (campaign: CampaignMetrics | null) => void
 }) {
   const [campaigns,    setCampaigns]    = useState<CampaignMetrics[]>(initialCampaigns)
   const [sortKey,      setSortKey]      = useState<SortKey>('cost')
   const [sortDir,      setSortDir]      = useState<'asc' | 'desc'>('desc')
   const [colOrder,     setColOrder]     = useState<string[]>(DEFAULT_COL_ORDER)
   const [colKeys,      setColKeys]      = useState<Set<string>>(DEFAULT_ENABLED_KEYS)
-  const [expandedId,   setExpandedId]   = useState<string | null>(null)
+  const [internalExpandedId, setInternalExpandedId] = useState<string | null>(null)
+
+  // Controlled vs uncontrolled drill-down
+  const controlled = onSelectCampaign !== undefined
+  const expandedId = controlled ? (selectedCampaignId ?? null) : internalExpandedId
+  function setExpanded(next: string | null) {
+    if (controlled) {
+      const target = next ? campaigns.find(c => c.id === next) ?? null : null
+      onSelectCampaign?.(target)
+    } else {
+      setInternalExpandedId(next)
+    }
+  }
   const [showInactive, setShowInactive] = useState(false)
+  // Density: cozy (default) | dense — persisted to localStorage
+  const [dense, setDense] = useState(false)
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('ws_campaigns_density')
+      if (v === 'dense') setDense(true)
+    } catch {}
+  }, [])
+  function toggleDense() {
+    setDense(d => {
+      const next = !d
+      try { localStorage.setItem('ws_campaigns_density', next ? 'dense' : 'cozy') } catch {}
+      return next
+    })
+  }
   const [cloneTarget,  setCloneTarget]  = useState<CampaignMetrics | null>(null)
   const [showTemplates,setShowTemplates]= useState(false)
   const [selectedIds,  setSelectedIds]  = useState<Set<string>>(new Set())
@@ -609,6 +643,13 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
           >
             {showInactive ? '◉ Hide Inactive' : '◎ Show Inactive'}
           </button>
+          <button
+            onClick={toggleDense}
+            className={`text-[11px] font-bold border px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 whitespace-nowrap ${dense ? 'bg-cyan/10 text-cyan-800 border-cyan/40' : 'text-navy/60 hover:text-navy border-cloud hover:border-cyan/40'}`}
+            title={dense ? 'Switch to cozy density' : 'Switch to dense density'}
+          >
+            {dense ? '☰ Dense' : '≣ Cozy'}
+          </button>
           <ColumnPicker colOrder={colOrder} enabledKeys={colKeys} onChange={handleColChange} />
           <button
             onClick={() => setShowTemplates(true)}
@@ -627,13 +668,13 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
         </div>
       </div>
 
-      <div className="overflow-auto max-h-[640px]">
+      <div className={`overflow-auto max-h-[calc(100vh-260px)] ${dense ? 'ct-dense' : ''}`}>
         <table className="w-full text-sm min-w-[900px]">
 
           {/* ── Header ── */}
           <thead className="sticky top-0 z-10 bg-mist">
             <tr className="border-b border-cloud">
-              <th className="w-10 px-3 py-3.5 text-center">
+              <th className="ct-stick ct-stick-cb w-10 px-3 py-3.5 text-center">
                 <input
                   type="checkbox"
                   checked={visible.length > 0 && selectedIds.size === visible.length}
@@ -643,7 +684,7 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
                 />
               </th>
               <th
-                className="text-left px-5 py-3.5 text-[10px] font-heading font-bold uppercase tracking-wider text-teal cursor-pointer hover:text-navy transition-colors select-none whitespace-nowrap"
+                className="ct-stick ct-stick-name text-left px-5 py-3.5 text-[10px] font-heading font-bold uppercase tracking-wider text-teal cursor-pointer hover:text-navy transition-colors select-none whitespace-nowrap"
                 onClick={() => handleSort('name')}
               >
                 Campaign <SortArrow active={sortKey === 'name'} dir={sortDir} />
@@ -679,10 +720,10 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
 
               return (
                 <Fragment key={c.id}>
-                  <tr className={`transition-colors ${isDrillOpen ? 'bg-cyan/5 border-l-2 border-l-cyan' : 'hover:bg-mist/50'}`}>
+                  <tr className={`ct-row transition-colors ${isDrillOpen ? 'ct-selected' : ''}`}>
 
-                    {/* Checkbox */}
-                    <td className="w-10 px-3 py-3.5 text-center" onClick={e => e.stopPropagation()}>
+                    {/* Checkbox (frozen) */}
+                    <td className="ct-stick ct-stick-cb w-10 px-3 py-3.5 text-center" onClick={e => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={selectedIds.has(c.id)}
@@ -691,12 +732,12 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
                       />
                     </td>
 
-                    {/* Name + type — click row to expand drill-down; ✏️ icon to rename */}
-                    <td className="px-5 py-3.5">
+                    {/* Name + type (frozen) — click row to inspect; ✏️ icon to rename */}
+                    <td className="ct-stick ct-stick-name px-5 py-3.5">
                       <div
                         className="cursor-pointer hover:text-cyan transition-colors"
-                        onClick={() => setExpandedId(id => id === c.id ? null : c.id)}
-                        title="Click to expand"
+                        onClick={() => setExpanded(expandedId === c.id ? null : c.id)}
+                        title="Click to inspect"
                       >
                         <NameCell campaign={c} clientId={clientId} onUpdated={name => handleNameUpdate(c.id, name)} />
                       </div>
@@ -733,19 +774,21 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
                       </td>
                     ))}
 
-                    {/* Pause / Resume */}
+                    {/* Pause / Resume (hover-reveal) */}
                     <td className="px-4 py-3.5 text-right">
-                      <StatusToggleBtn
-                        campaignId={c.id} clientId={clientId}
-                        currentStatus={c.status} onStatusChange={handleStatusChange}
-                      />
+                      <span className="ct-actions inline-flex">
+                        <StatusToggleBtn
+                          campaignId={c.id} clientId={clientId}
+                          currentStatus={c.status} onStatusChange={handleStatusChange}
+                        />
+                      </span>
                     </td>
 
-                    {/* Clone */}
+                    {/* Clone (hover-reveal) */}
                     <td className="px-3 py-3.5 text-right">
                       <button
                         onClick={e => { e.stopPropagation(); setCloneTarget(c) }}
-                        className="text-[10px] text-navy/40 hover:text-teal border border-transparent hover:border-cloud px-2 py-1 rounded-lg transition-all"
+                        className="ct-actions text-[10px] text-navy/40 hover:text-teal border border-transparent hover:border-cloud px-2 py-1 rounded-lg transition-all"
                         title="Clone campaign"
                       >
                         📋
@@ -753,8 +796,9 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
                     </td>
                   </tr>
 
-                  {/* ── Inline drill-down — expands directly below the campaign row ── */}
-                  {isDrillOpen && (
+                  {/* ── Inline drill-down ── Only rendered in uncontrolled mode.
+                       When controlled, the parent renders DrillDownPanel in the side panel. */}
+                  {isDrillOpen && !controlled && (
                     <tr>
                       <td colSpan={visibleCols.length + 6} className="p-0">
                         <div className="border-t-2 border-cyan/20 animate-in fade-in duration-150">
@@ -766,7 +810,7 @@ export function CampaignsTable({ campaigns: initialCampaigns, currency, clientId
                             startDate={startDate}
                             endDate={endDate}
                             channelType={c.channel_type}
-                            onClose={() => setExpandedId(null)}
+                            onClose={() => setExpanded(null)}
                           />
                         </div>
                       </td>
