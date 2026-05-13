@@ -31,16 +31,28 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${on ? 'bg-teal/15 text-teal' : 'bg-cloud text-navy/40'}`}>{on ? 'Enabled' : 'Paused'}</span>
 }
 
-function PerfDot({ label }: { label: string }) {
+// PMax asset-link primary-status dot. Google removed performance_label
+// (BEST/GOOD/LOW) in v23 and replaced it with primary_status — an eligibility
+// state rather than a performance rating.
+function StatusDot({ status }: { status: string }) {
   const map: Record<string, { dot: string; label: string }> = {
-    BEST:        { dot: 'bg-green-500',  label: 'Best'    },
-    GOOD:        { dot: 'bg-blue-500',   label: 'Good'    },
-    LOW:         { dot: 'bg-red-500',    label: 'Low'     },
-    PENDING:     { dot: 'bg-gray-400',   label: 'Pending' },
-    UNSPECIFIED: { dot: 'bg-gray-300',   label: '—'       },
+    APPROVED:     { dot: 'bg-emerald-500', label: 'Approved'     },
+    ELIGIBLE:     { dot: 'bg-emerald-500', label: 'Eligible'     },
+    LIMITED:      { dot: 'bg-amber-500',   label: 'Limited'      },
+    PENDING:      { dot: 'bg-amber-400',   label: 'Pending'      },
+    PAUSED:       { dot: 'bg-gray-400',    label: 'Paused'       },
+    NOT_ELIGIBLE: { dot: 'bg-red-500',     label: 'Not eligible' },
+    REMOVED:      { dot: 'bg-gray-300',    label: 'Removed'      },
+    UNKNOWN:      { dot: 'bg-gray-300',    label: '—'            },
+    UNSPECIFIED:  { dot: 'bg-gray-300',    label: '—'            },
   }
-  const m = map[label] ?? map.UNSPECIFIED
-  return <span className="flex items-center gap-1"><span className={`w-2 h-2 rounded-full ${m.dot}`} /><span className="text-xs text-[var(--text-2)]">{m.label}</span></span>
+  const m = map[status] ?? map.UNSPECIFIED
+  return (
+    <span className="flex items-center gap-1">
+      <span className={`w-2 h-2 rounded-full ${m.dot}`} />
+      <span className="text-xs text-[var(--text-2)]">{m.label}</span>
+    </span>
+  )
 }
 
 function MetricCells({ row, currency }: { row: AssetRow; currency: string }) {
@@ -726,7 +738,10 @@ function PMaxAssetsView({ rows, loading, error, clientId, onRefresh }: {
             <thead className="bg-[var(--surface-lo)]">
               <tr>
                 <th className="px-3 py-2 text-left text-[9px] font-bold uppercase tracking-wider text-[var(--text-2)]">Content</th>
-                <th className="px-3 py-2 text-left text-[9px] font-bold uppercase tracking-wider text-[var(--text-2)]">Performance</th>
+                <th
+                  className="px-3 py-2 text-left text-[9px] font-bold uppercase tracking-wider text-[var(--text-2)]"
+                  title="Asset eligibility (Google removed per-asset performance ratings in API v23)"
+                >Eligibility</th>
                 <th className="px-3 py-2 text-left text-[9px] font-bold uppercase tracking-wider text-[var(--text-2)]">Status</th>
                 <th className="px-3 py-2 w-12" />
               </tr>
@@ -740,7 +755,7 @@ function PMaxAssetsView({ rows, loading, error, clientId, onRefresh }: {
                     {row.videoId  && <a href={`https://youtube.com/watch?v=${row.videoId}`} target="_blank" rel="noreferrer" className="text-cyan text-xs">{row.videoId}</a>}
                     {!row.text && !row.imageUrl && !row.videoId && <span className="text-[var(--text-2)]">—</span>}
                   </td>
-                  <td className="px-3 py-2"><PerfDot label={row.performanceLabel} /></td>
+                  <td className="px-3 py-2"><StatusDot status={row.primaryStatus} /></td>
                   <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
                   <td className="px-3 py-2 text-right">
                     <button onClick={() => handleRemove(row)} className="text-[var(--text-2)] hover:text-red-500 transition-colors" title="Remove">🗑</button>

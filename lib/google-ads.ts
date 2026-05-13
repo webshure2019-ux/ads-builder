@@ -2464,7 +2464,11 @@ export interface PMaxAssetRow {
   assetId:          string
   assetGroupId:     string
   fieldType:        string
-  performanceLabel: string
+  /** Asset-link primary status: one of
+   *  ELIGIBLE | LIMITED | PAUSED | PENDING | NOT_ELIGIBLE | APPROVED | REMOVED | UNSPECIFIED.
+   *  Replaces the old `performanceLabel` (BEST/GOOD/LOW), which Google removed
+   *  from the API in v23 — they no longer expose per-asset performance ratings. */
+  primaryStatus:    string
   status:           string
   text?:     string
   imageUrl?: string
@@ -2682,6 +2686,11 @@ export async function getPMaxAssets(
   const cleanedClientId = cleanId(clientAccountId)
   const customer = await getClientCustomer(cleanedClientId)
 
+  // `asset_group_asset.performance_label` was REMOVED in Google Ads API v23.
+  // Google deprecated per-asset performance ratings (BEST/GOOD/LOW). The
+  // closest replacement is `asset_group_asset.primary_status` — eligibility
+  // (ELIGIBLE/LIMITED/PAUSED/PENDING/NOT_ELIGIBLE/APPROVED/REMOVED) rather
+  // than a performance score.
   const rows = await customer.query(`
     SELECT
       asset.id,
@@ -2690,7 +2699,7 @@ export async function getPMaxAssets(
       asset.image_asset.full_size.url,
       asset.youtube_video_asset.youtube_video_id,
       asset_group_asset.field_type,
-      asset_group_asset.performance_label,
+      asset_group_asset.primary_status,
       asset_group_asset.status,
       asset_group.id
     FROM asset_group_asset
@@ -2698,12 +2707,27 @@ export async function getPMaxAssets(
       AND asset_group_asset.status != 'REMOVED'
   `)
 
+  // AssetLinkPrimaryStatus enum (v23): 2=ELIGIBLE, 3=PAUSED, 4=REMOVED,
+  // 5=PENDING, 6=NOT_ELIGIBLE, 7=LIMITED, 8=APPROVED
+  const PRIMARY_STATUS_MAP: Record<string, string> = {
+    '0': 'UNSPECIFIED', '1': 'UNKNOWN',
+    '2': 'ELIGIBLE',  '3': 'PAUSED',  '4': 'REMOVED',
+    '5': 'PENDING',   '6': 'NOT_ELIGIBLE', '7': 'LIMITED', '8': 'APPROVED',
+    UNSPECIFIED: 'UNSPECIFIED', UNKNOWN: 'UNKNOWN',
+    ELIGIBLE: 'ELIGIBLE', PAUSED: 'PAUSED', REMOVED: 'REMOVED',
+    PENDING: 'PENDING', NOT_ELIGIBLE: 'NOT_ELIGIBLE', LIMITED: 'LIMITED', APPROVED: 'APPROVED',
+  }
+  function normalisePrimaryStatus(raw: any): string {
+    const s = String(raw ?? '')
+    return PRIMARY_STATUS_MAP[s] ?? PRIMARY_STATUS_MAP[s.toUpperCase()] ?? 'UNSPECIFIED'
+  }
+
   return rows.map((r: any) => ({
-    assetId:          String(r.asset?.id          ?? ''),
-    assetGroupId:     String(r.asset_group?.id    ?? ''),
-    fieldType:        String(r.asset_group_asset?.field_type        ?? ''),
-    performanceLabel: String(r.asset_group_asset?.performance_label ?? 'UNSPECIFIED'),
-    status:           String(r.asset_group_asset?.status            ?? 'ENABLED'),
+    assetId:       String(r.asset?.id          ?? ''),
+    assetGroupId:  String(r.asset_group?.id    ?? ''),
+    fieldType:     String(r.asset_group_asset?.field_type        ?? ''),
+    primaryStatus: normalisePrimaryStatus(r.asset_group_asset?.primary_status),
+    status:        String(r.asset_group_asset?.status            ?? 'ENABLED'),
     text:     r.asset?.text_asset?.text                        ?? undefined,
     imageUrl: r.asset?.image_asset?.full_size?.url             ?? undefined,
     videoId:  r.asset?.youtube_video_asset?.youtube_video_id   ?? undefined,
