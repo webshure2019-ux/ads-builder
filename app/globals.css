@@ -258,6 +258,97 @@ thead .ct-stick { background: inherit; z-index: 11; }
 .dark .ws-themed-surface [class*="text-navy/6"],
 .dark .ws-themed-surface [class*="text-navy/7"] { color: var(--text-2); }
 
+/* ── Tailwind status-colour flips for legacy sections ───────────────
+   Section components combine bright Tailwind backgrounds (bg-amber-50,
+   bg-red-100, …) with dark Tailwind text (text-amber-700, text-red-600, …)
+   — readable in light mode. In dark mode the bg gets a dark variant and
+   the text gets a lighter shade so the meaning is preserved.
+   Selectors use `[class~="x"]` for exact word + `[class*="x/"]` for
+   Webshure-style opacity variants — never substring-matching numeric
+   suffixes (so bg-amber-50 doesn't accidentally hit bg-amber-500). */
+
+/* AMBER — warnings, in-progress states */
+.dark .ws-themed-surface [class~="bg-amber-50"],
+.dark .ws-themed-surface [class*="bg-amber-50/"]  { background: rgb(120 53 15 / 0.35); }
+.dark .ws-themed-surface [class~="bg-amber-100"],
+.dark .ws-themed-surface [class*="bg-amber-100/"] { background: rgb(120 53 15 / 0.55); }
+.dark .ws-themed-surface .border-amber-200,
+.dark .ws-themed-surface .border-amber-300        { border-color: rgb(146 64 14 / 0.55); }
+.dark .ws-themed-surface .text-amber-500,
+.dark .ws-themed-surface .text-amber-600,
+.dark .ws-themed-surface .text-amber-700,
+.dark .ws-themed-surface .text-amber-800,
+.dark .ws-themed-surface .text-amber-900          { color: rgb(252 211 77); /* amber-300 */ }
+
+/* RED — errors, critical */
+.dark .ws-themed-surface [class~="bg-red-50"],
+.dark .ws-themed-surface [class*="bg-red-50/"]    { background: rgb(127 29 29 / 0.30); }
+.dark .ws-themed-surface [class~="bg-red-100"],
+.dark .ws-themed-surface [class*="bg-red-100/"]   { background: rgb(127 29 29 / 0.50); }
+.dark .ws-themed-surface .border-red-100,
+.dark .ws-themed-surface .border-red-200,
+.dark .ws-themed-surface .border-red-300          { border-color: rgb(153 27 27 / 0.55); }
+.dark .ws-themed-surface .text-red-400,
+.dark .ws-themed-surface .text-red-500,
+.dark .ws-themed-surface .text-red-600,
+.dark .ws-themed-surface .text-red-700,
+.dark .ws-themed-surface .text-red-900            { color: rgb(252 165 165); /* red-300 */ }
+
+/* EMERALD — success, healthy */
+.dark .ws-themed-surface [class~="bg-emerald-50"],
+.dark .ws-themed-surface [class*="bg-emerald-50/"]  { background: rgb(6 78 59 / 0.30); }
+.dark .ws-themed-surface [class~="bg-emerald-100"],
+.dark .ws-themed-surface [class*="bg-emerald-100/"] { background: rgb(6 78 59 / 0.50); }
+.dark .ws-themed-surface .border-emerald-100,
+.dark .ws-themed-surface .border-emerald-200,
+.dark .ws-themed-surface .border-emerald-300      { border-color: rgb(6 95 70 / 0.55); }
+.dark .ws-themed-surface .text-emerald-500,
+.dark .ws-themed-surface .text-emerald-600,
+.dark .ws-themed-surface .text-emerald-700,
+.dark .ws-themed-surface .text-emerald-800,
+.dark .ws-themed-surface .text-emerald-900        { color: rgb(110 231 183); /* emerald-300 */ }
+
+/* CYAN — informational (Tailwind scale, not Webshure DEFAULT cyan) */
+.dark .ws-themed-surface .text-cyan-700,
+.dark .ws-themed-surface .text-cyan-800,
+.dark .ws-themed-surface .text-cyan-900           { color: rgb(103 232 249); /* cyan-300 */ }
+
+/* BLUE — info, neutral */
+.dark .ws-themed-surface [class~="bg-blue-50"],
+.dark .ws-themed-surface [class*="bg-blue-50/"]   { background: rgb(30 58 138 / 0.30); }
+.dark .ws-themed-surface [class~="bg-blue-100"],
+.dark .ws-themed-surface [class*="bg-blue-100/"]  { background: rgb(30 58 138 / 0.50); }
+.dark .ws-themed-surface .border-blue-200         { border-color: rgb(30 64 175 / 0.55); }
+.dark .ws-themed-surface .text-blue-600,
+.dark .ws-themed-surface .text-blue-700,
+.dark .ws-themed-surface .text-blue-800           { color: rgb(147 197 253); /* blue-300 */ }
+
+/* ORANGE — warnings */
+.dark .ws-themed-surface [class~="bg-orange-50"],
+.dark .ws-themed-surface [class*="bg-orange-50/"]   { background: rgb(124 45 18 / 0.30); }
+.dark .ws-themed-surface [class~="bg-orange-100"],
+.dark .ws-themed-surface [class*="bg-orange-100/"]  { background: rgb(124 45 18 / 0.50); }
+.dark .ws-themed-surface .border-orange-200       { border-color: rgb(154 52 18 / 0.55); }
+.dark .ws-themed-surface .text-orange-700         { color: rgb(253 186 116); /* orange-300 */ }
+
+/* PURPLE / VIOLET */
+.dark .ws-themed-surface [class~="bg-purple-50"],
+.dark .ws-themed-surface [class*="bg-purple-50/"]   { background: rgb(76 29 149 / 0.30); }
+.dark .ws-themed-surface [class~="bg-purple-100"],
+.dark .ws-themed-surface [class~="bg-violet-100"]   { background: rgb(76 29 149 / 0.50); }
+.dark .ws-themed-surface .border-purple-300,
+.dark .ws-themed-surface .border-violet-300       { border-color: rgb(91 33 182 / 0.55); }
+.dark .ws-themed-surface .text-purple-600,
+.dark .ws-themed-surface .text-purple-800,
+.dark .ws-themed-surface .text-violet-800         { color: rgb(216 180 254); /* purple-300 */ }
+
+/* SKY */
+.dark .ws-themed-surface [class~="bg-sky-50"],
+.dark .ws-themed-surface [class*="bg-sky-50/"]    { background: rgb(12 74 110 / 0.30); }
+.dark .ws-themed-surface .border-sky-200          { border-color: rgb(7 89 133 / 0.55); }
+.dark .ws-themed-surface .text-sky-600,
+.dark .ws-themed-surface .text-sky-800            { color: rgb(125 211 252); /* sky-300 */ }
+
 /* ── Scrollbar ─────────────────────────────────────────────── */
 ::-webkit-scrollbar        { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track  { background: transparent; }
