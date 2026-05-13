@@ -1,4 +1,17 @@
 // lib/google-ads.ts
+//
+// Suppress the noisy GCE metadata server probe from google-auth-library.
+// google-ads-api → google-gax → google-auth-library tries to detect whether
+// it's running on Google Compute Engine by hitting `metadata.google.internal`
+// on every cold start. On Vercel that host doesn't resolve, producing a
+// "MetadataLookupWarning: All promises were rejected" entry in the logs.
+// We auth via a static refresh token so the GCE probe is wasted effort —
+// telling the library to skip detection makes the warning go away and
+// shaves a couple of hundred milliseconds off the cold path.
+if (!process.env.METADATA_SERVER_DETECTION) {
+  process.env.METADATA_SERVER_DETECTION = 'none'
+}
+
 import { GoogleAdsApi, services } from 'google-ads-api'
 import { Keyword, CampaignSettingsData, GeneratedAssets, KeywordSuggestion, AdGroup } from '@/types'
 
@@ -2116,6 +2129,10 @@ export async function getAuctionInsights(
 
   const customer = await getClientCustomer(clientAccountId)
 
+  // `auction_insight` is NOT a top-level resource in Google Ads API v23.
+  // The auction-insight metrics are exposed on `campaign` (and other resources)
+  // when segmented by `segments.auction_insight_domain`. Each segmented row is
+  // one competitor's slice for the campaign in the date range.
   const results = await customer.query(`
     SELECT
       segments.auction_insight_domain,
@@ -2125,7 +2142,7 @@ export async function getAuctionInsights(
       metrics.auction_insight_search_top_impression_percentage,
       metrics.auction_insight_search_absolute_top_impression_percentage,
       metrics.auction_insight_search_outranking_share
-    FROM auction_insight
+    FROM campaign
     WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
       AND campaign.id = ${campaignId}
     ORDER BY metrics.auction_insight_search_impression_share DESC
@@ -2200,15 +2217,19 @@ export async function getLocationTargets(
 
   if (criteriaRows.length === 0) return []
 
-  // Query 2 — performance metrics (scoped to date range)
+  // Query 2 — performance metrics (scoped to date range).
+  // In Google Ads API v23 `location_view` exposes only `resource_name`; the
+  // legacy `location_view.targeting_location` field was removed. The resource
+  // name format is `customers/{cid}/locationViews/{campaign_id}~{criterion_id}`
+  // so we extract the criterion_id from there and key the perf map by it.
   // Wrapped in try/catch: some campaign types (e.g. PMax) don't support
-  // location_view, and the query may legitimately return no rows or error.
-  // On failure we log a warning and continue with zero metrics.
-  const perfMap = new Map<string, any>()
+  // location_view at all and will throw — we degrade to zero-metrics rather
+  // than failing the whole tab.
+  const perfMap = new Map<string, any>()  // keyed by campaign_criterion.criterion_id
   try {
     const perfRows = await customer.query(`
       SELECT
-        location_view.targeting_location,
+        location_view.resource_name,
         metrics.clicks,
         metrics.impressions,
         metrics.cost_micros,
@@ -2219,8 +2240,11 @@ export async function getLocationTargets(
         AND segments.date BETWEEN '${startDate}' AND '${endDate}'
     `) as any[]
     for (const r of perfRows) {
-      const loc = String(r.location_view?.targeting_location ?? '')
-      if (loc) perfMap.set(loc, r.metrics)
+      const rn = String(r.location_view?.resource_name ?? '')
+      // e.g. "customers/123/locationViews/456~7890" → criterion_id = "7890"
+      const tail = rn.split('/').pop() ?? ''
+      const criterionId = tail.split('~')[1] ?? ''
+      if (criterionId) perfMap.set(criterionId, r.metrics)
     }
   } catch (perfErr: unknown) {
     console.warn('[getLocationTargets] location_view query failed — returning zero metrics:', perfErr)
@@ -2251,9 +2275,10 @@ export async function getLocationTargets(
   }
 
   return criteriaRows.map(r => {
-    const geoKey     = String(r.campaign_criterion?.location?.geo_target_constant ?? '')
-    const geo        = geoMap.get(geoKey)
-    const perf       = perfMap.get(geoKey)
+    const geoKey      = String(r.campaign_criterion?.location?.geo_target_constant ?? '')
+    const criterionId = String(r.campaign_criterion?.criterion_id ?? '')
+    const geo         = geoMap.get(geoKey)
+    const perf        = perfMap.get(criterionId)   // location_view metrics keyed by criterion_id
     const clicks      = Number(perf?.clicks             ?? 0)
     const impressions = Number(perf?.impressions         ?? 0)
     const cost        = Number(perf?.cost_micros         ?? 0) / 1_000_000
@@ -2261,7 +2286,7 @@ export async function getLocationTargets(
     const convValue   = Number(perf?.conversions_value   ?? 0)
     const geoId       = geoKey.replace('geoTargetConstants/', '')
     return {
-      criterionId:   String(r.campaign_criterion?.criterion_id ?? ''),
+      criterionId,
       geoTargetId:   geoId,
       name:          String(geo?.name          ?? geoId),
       canonicalName: String(geo?.canonical_name ?? geo?.name ?? geoId),
