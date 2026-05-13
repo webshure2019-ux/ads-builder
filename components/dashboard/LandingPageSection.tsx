@@ -110,21 +110,49 @@ export function LandingPageSection({ clientAccountId, startDate, endDate, campai
   }, [clientAccountId, startDate, endDate, campaignId])
 
   if (loading) return (
-    <div className="border border-cloud rounded-3xl p-6 bg-white animate-pulse">
-      <div className="h-4 w-56 bg-cloud rounded mb-4" />
+    <div
+      className="rounded-2xl p-6 animate-pulse"
+      style={{ background: 'var(--surface-lo)', border: '1px solid var(--border-lo)' }}
+    >
+      <div className="h-4 w-56 rounded mb-4" style={{ background: 'var(--border-lo)' }} />
       <div className="space-y-2">
-        {[1,2,3].map(i => <div key={i} className="h-10 bg-cloud rounded-xl" />)}
+        {[1,2,3].map(i => (
+          <div key={i} className="h-10 rounded-xl" style={{ background: 'var(--border-lo)' }} />
+        ))}
       </div>
     </div>
   )
 
   if (error) return (
-    <div className="border border-red-200 rounded-3xl p-5 bg-red-50 text-sm text-red-700">
-      Landing page data unavailable: {error}
+    <div className="rounded-2xl p-4 text-sm flex items-start gap-3"
+         style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.30)', color: '#dc2626' }}>
+      <span className="text-xl flex-shrink-0">⚠</span>
+      <div>
+        <p className="font-bold mb-1">Landing page data unavailable</p>
+        <p className="text-xs opacity-80 leading-relaxed">{error}</p>
+        <button
+          onClick={() => { setError(null); fetched.current = '' }}
+          className="text-xs underline mt-2"
+        >Retry</button>
+      </div>
     </div>
   )
 
-  if (rows.length === 0) return null
+  if (rows.length === 0) return (
+    <div
+      className="rounded-2xl p-8 text-center"
+      style={{ background: 'var(--surface-lo)', border: '1px solid var(--border-lo)' }}
+    >
+      <div className="text-3xl mb-2">📄</div>
+      <p className="text-sm font-heading font-bold mb-1" style={{ color: 'var(--text-1)' }}>
+        No landing page data for this period
+      </p>
+      <p className="text-xs leading-relaxed max-w-md mx-auto" style={{ color: 'var(--text-2)' }}>
+        Google Ads <code className="px-1 rounded" style={{ background: 'var(--surface-lo)' }}>landing_page_view</code> can lag actual traffic by 24&nbsp;–&nbsp;48 hours, and Performance Max campaigns don&apos;t expose per-URL data here.
+        Try a wider date range, or open the campaign drill-down for URL-level metrics on Search campaigns.
+      </p>
+    </div>
+  )
 
   // Aggregates
   const totalClicks  = rows.reduce((s, r) => s + r.clicks, 0)

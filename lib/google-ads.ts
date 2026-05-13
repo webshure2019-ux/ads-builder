@@ -1710,9 +1710,15 @@ export async function getLandingPagePerformance(
   if (startDate > endDate) throw new Error('start_date must be before end_date')
   const customer = await getClientCustomer(clientAccountId)
 
-  const campaignFilter = campaignId ? `AND campaign.id = '${campaignId}'` : ''
+  // When a campaign filter is present, `campaign.id` must also be in SELECT
+  // (GAQL rule: referenced fields in WHERE need to appear in SELECT).
+  const campaignFilter   = campaignId ? `\n      AND campaign.id = ${campaignId}` : ''
+  const campaignIdSelect = campaignId ? '\n      campaign.id,' : ''
+  // We deliberately let GAQL errors propagate here rather than swallow them
+  // with a `.catch(() => [])`. The previous silent-catch made an empty Landing
+  // Pages tab indistinguishable from "the API is rejecting the query".
   const rows = await customer.query(`
-    SELECT
+    SELECT${campaignIdSelect}
       landing_page_view.unexpanded_final_url,
       metrics.impressions,
       metrics.clicks,
@@ -1724,7 +1730,7 @@ export async function getLandingPagePerformance(
     FROM landing_page_view
     WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
       ${campaignFilter}
-  `).catch(() => [] as any[]) as any[]
+  `) as any[]
 
   // Aggregate by URL (query may return one row per campaign per URL)
   const byUrl = new Map<string, {
@@ -1785,7 +1791,10 @@ export async function getLandingPagePerformance(
         avgPageViews:      avg(m.pageViews)   !== null ? Math.round(avg(m.pageViews)!   * 100) / 100 : null,
       }
     })
-    .filter(r => r.clicks > 0)
+    // Keep any URL with measurable activity. Previously this filtered to
+    // `clicks > 0` only, which hid URLs that had impressions but no clicks yet
+    // (a fresh campaign in its first day, or a brand-new ad variant).
+    .filter(r => r.clicks > 0 || r.impressions > 0 || r.cost > 0)
     .sort((a, b) => b.cost - a.cost)
 }
 
