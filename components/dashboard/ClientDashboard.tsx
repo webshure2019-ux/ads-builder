@@ -365,6 +365,14 @@ export function ClientDashboard() {
     setConvActions([]); setConvError(''); setCampaignSearch('')
   }, [clientId, preset, customStart, customEnd])
 
+  // When the client switches, close the drill-down panel — the open campaign
+  // belongs to the previous client and its id won't resolve under the new one.
+  // Date-range changes are safe: the same campaign id is still valid, and the
+  // panel re-fetches its tabs on startDate/endDate prop changes.
+  useEffect(() => {
+    setDrillCampaign(null)
+  }, [clientId])
+
   // ── Core fetch ──────────────────────────────────────────────────────────────
   const fetchStats = useCallback(async (
     id: string, start: string, end: string, doCompare: boolean
