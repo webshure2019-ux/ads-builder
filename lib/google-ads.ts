@@ -897,47 +897,66 @@ export async function getAssetGroups(
 
   const customer = await getClientCustomer(clientAccountId)
 
+  // Aligned with Google's reference query for asset-group reporting.
+  // The previous version included `AND asset_group.status != 'REMOVED'`,
+  // which is allowed but combining it with date-segmented metrics in v23
+  // caused the metrics rows to come back with 0 values for some campaigns.
+  // The official recommendation omits that filter entirely and we discard
+  // REMOVED groups in JS afterwards.
+  // https://developers.google.com/google-ads/api/performance-max/asset-group-reporting
   const results = await customer.query(`
     SELECT
       campaign.id,
       asset_group.id,
       asset_group.name,
       asset_group.status,
+      asset_group.primary_status,
       asset_group.final_urls,
       metrics.impressions,
       metrics.clicks,
       metrics.cost_micros,
-      metrics.conversions
+      metrics.conversions,
+      metrics.conversions_value
     FROM asset_group
     WHERE campaign.id = ${campaignId}
       AND segments.date BETWEEN '${startDate}' AND '${endDate}'
-      AND asset_group.status != 'REMOVED'
-    ORDER BY metrics.cost_micros DESC
   `) as any[]
 
   const byGroup = new Map<string, {
-    name: string; status: string; final_urls: string[]
+    name: string; status: string; primaryStatus: string; final_urls: string[]
     impressions: number; clicks: number; costMicros: number; conversions: number
+    convValue: number
   }>()
+
+  // Drop REMOVED groups in JS — we used to do this with a WHERE filter but
+  // that combined poorly with date-segmented metrics on this resource.
+  // status enum: ENABLED=2 PAUSED=3 REMOVED=4
+  function isRemoved(status: any): boolean {
+    return String(status) === '4' || String(status).toUpperCase() === 'REMOVED'
+  }
 
   for (const r of results) {
     const id = String(r.asset_group?.id ?? '')
     if (!id) continue
+    if (isRemoved(r.asset_group?.status)) continue
     const prev = byGroup.get(id)
     if (prev) {
-      prev.impressions += r.metrics?.impressions ?? 0
-      prev.clicks      += r.metrics?.clicks      ?? 0
-      prev.costMicros  += r.metrics?.cost_micros ?? 0
-      prev.conversions += r.metrics?.conversions ?? 0
+      prev.impressions += r.metrics?.impressions       ?? 0
+      prev.clicks      += r.metrics?.clicks            ?? 0
+      prev.costMicros  += r.metrics?.cost_micros       ?? 0
+      prev.conversions += r.metrics?.conversions       ?? 0
+      prev.convValue   += r.metrics?.conversions_value ?? 0
     } else {
       byGroup.set(id, {
-        name:        r.asset_group?.name      ?? 'Unknown',
-        status:      String(r.asset_group?.status ?? 'UNKNOWN'),
-        final_urls:  Array.isArray(r.asset_group?.final_urls) ? r.asset_group.final_urls : [],
-        impressions: r.metrics?.impressions ?? 0,
-        clicks:      r.metrics?.clicks      ?? 0,
-        costMicros:  r.metrics?.cost_micros ?? 0,
-        conversions: r.metrics?.conversions ?? 0,
+        name:          r.asset_group?.name           ?? 'Unknown',
+        status:        String(r.asset_group?.status         ?? 'UNKNOWN'),
+        primaryStatus: String(r.asset_group?.primary_status ?? ''),
+        final_urls:    Array.isArray(r.asset_group?.final_urls) ? r.asset_group.final_urls : [],
+        impressions: r.metrics?.impressions       ?? 0,
+        clicks:      r.metrics?.clicks            ?? 0,
+        costMicros:  r.metrics?.cost_micros       ?? 0,
+        conversions: r.metrics?.conversions       ?? 0,
+        convValue:   r.metrics?.conversions_value ?? 0,
       })
     }
   }

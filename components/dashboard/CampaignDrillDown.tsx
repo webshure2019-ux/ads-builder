@@ -575,12 +575,32 @@ function AssetGroupsTab({ assetGroups, currency, loading, error }: {
     )
   }
 
+  // Detect "campaign has data but asset-group rows are all zero" so we can
+  // explain the gap. Google sometimes returns asset-group rows with zero
+  // metrics for new groups, low-volume campaigns, or shopping-listing PMax
+  // where attribution lives on `asset_group_listing_group_filter` instead.
+  const allZero = assetGroups.length > 0
+    && assetGroups.every(g => g.impressions === 0 && g.clicks === 0 && g.cost === 0)
+
   return (
     <div className="overflow-x-auto">
       <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4">
         <span className="text-sm flex-shrink-0">⚡</span>
         <p className="text-[11px] text-amber-800">Performance Max campaigns use <strong>Asset Groups</strong> instead of traditional ad groups. Each asset group contains headlines, descriptions, images, and videos that Google assembles into ads automatically.</p>
       </div>
+
+      {allZero && (
+        <div className="flex items-start gap-2 bg-cyan/5 border border-cyan/20 rounded-xl px-3 py-2 mb-4">
+          <span className="text-sm flex-shrink-0 mt-0.5">ℹ️</span>
+          <div className="text-[11px] text-teal leading-relaxed">
+            <strong>Asset-group metrics unavailable for this campaign.</strong> Google sometimes
+            withholds asset-group-level attribution for low-volume or newly-launched groups, and
+            for Shopping-feed PMax campaigns the metrics live on listing-group filters rather than
+            asset groups. Campaign-level totals are still accurate — view the per-asset-group
+            breakdown in the Google Ads UI under <em>Asset groups → Asset groups</em>.
+          </div>
+        </div>
+      )}
       <table className="w-full text-sm min-w-[760px]">
         <thead>
           <tr className="border-b border-cloud">
