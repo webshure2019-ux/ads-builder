@@ -683,6 +683,7 @@ export async function getAdGroups(
 
   const results = await customer.query(`
     SELECT
+      campaign.id,
       ad_group.id,
       ad_group.name,
       ad_group.status,
@@ -786,6 +787,7 @@ export async function getAds(
 
   const results = await customer.query(`
     SELECT
+      campaign.id,
       ad_group_ad.ad.id,
       ad_group_ad.ad.type,
       ad_group_ad.ad.final_urls,
@@ -897,6 +899,7 @@ export async function getAssetGroups(
 
   const results = await customer.query(`
     SELECT
+      campaign.id,
       asset_group.id,
       asset_group.name,
       asset_group.status,
@@ -1162,6 +1165,7 @@ export async function cloneCampaign(
   // 1. Read source campaign config
   const rows = await customer.query(`
     SELECT
+      campaign.id,
       campaign.name,
       campaign.advertising_channel_type,
       campaign.bidding_strategy_type,
@@ -1603,9 +1607,10 @@ export async function getDevicePerformance(
   if (startDate > endDate) throw new Error('start_date must be before end_date')
   const customer = await getClientCustomer(clientAccountId)
 
-  const campaignFilter = campaignId ? `AND campaign.id = '${campaignId}'` : ''
+  const campaignFilter = campaignId ? `AND campaign.id = ${campaignId}` : ''
   const rows = await customer.query(`
     SELECT
+      campaign.id,
       segments.device,
       metrics.impressions,
       metrics.clicks,
@@ -1802,6 +1807,7 @@ export async function getHourlyPerformance(
 
   const results = await customer.query(`
     SELECT
+      campaign.id,
       segments.day_of_week,
       segments.hour,
       metrics.impressions,
@@ -2135,6 +2141,7 @@ export async function getAuctionInsights(
   // one competitor's slice for the campaign in the date range.
   const results = await customer.query(`
     SELECT
+      campaign.id,
       segments.auction_insight_domain,
       metrics.auction_insight_search_impression_share,
       metrics.auction_insight_search_overlap_rate,
@@ -2204,6 +2211,7 @@ export async function getLocationTargets(
   // Query 1 — current-state targets (no date range, no segments)
   const criteriaRows = await customer.query(`
     SELECT
+      campaign.id,
       campaign_criterion.criterion_id,
       campaign_criterion.location.geo_target_constant,
       campaign_criterion.bid_modifier,
@@ -2229,6 +2237,7 @@ export async function getLocationTargets(
   try {
     const perfRows = await customer.query(`
       SELECT
+        campaign.id,
         location_view.resource_name,
         metrics.clicks,
         metrics.impressions,
@@ -3221,6 +3230,7 @@ export async function getBidStrategy(
   const customer = await getClientCustomer(clientAccountId)
   const results = await customer.query(`
     SELECT
+      campaign.id,
       campaign.bidding_strategy_type,
       campaign.bidding_strategy_system_status,
       campaign.target_cpa.target_cpa_micros,
@@ -3332,6 +3342,7 @@ export async function getGeoPerformance(
 
   const results = await customer.query(`
     SELECT
+      campaign.id,
       geographic_view.location_type,
       geographic_view.country_criterion_id,
       segments.geo_target_city,
