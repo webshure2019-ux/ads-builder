@@ -33,11 +33,14 @@ const LEARNING_STATUSES = new Set([
   '2', '3', '4', '5', '6', '7',  // numeric API equivalents
 ])
 
-// Smart bidding types that have a learning phase
+// Smart bidding types that have a learning phase. Numeric codes per
+// google-ads-api v23 BiddingStrategyType:
+//   ENHANCED_CPC=2, TARGET_CPA=6, TARGET_ROAS=8,
+//   MAXIMIZE_CONVERSIONS=10, MAXIMIZE_CONVERSION_VALUE=11, TARGET_IMPRESSION_SHARE=15
 const SMART_BIDDING_TYPES = new Set([
   'MAXIMIZE_CONVERSIONS', 'MAXIMIZE_CONVERSION_VALUE', 'TARGET_CPA', 'TARGET_ROAS',
-  'ENHANCED_CPC',
-  '8', '9', '6', '7', '12',       // numeric API equivalents
+  'ENHANCED_CPC', 'TARGET_IMPRESSION_SHARE',
+  '2', '6', '8', '10', '11', '15',
 ])
 
 function isLearning(c: CampaignMetrics) {

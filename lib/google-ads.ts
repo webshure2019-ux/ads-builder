@@ -154,8 +154,9 @@ export async function getKeywordSuggestions(
   }))
 }
 
-// Match type enum values for Google Ads API
-const MATCH_TYPE = { exact: 4, phrase: 3, broad: 5 }
+// KeywordMatchType enum values from google-ads-api v23:
+//   UNSPECIFIED=0, UNKNOWN=1, EXACT=2, PHRASE=3, BROAD=4
+const MATCH_TYPE = { exact: 2, phrase: 3, broad: 4 }
 
 // Bidding strategy builder
 function buildBiddingStrategy(settings: CampaignSettingsData) {
@@ -1195,12 +1196,13 @@ export async function cloneCampaign(
     },
   }
 
-  // Carry over bidding settings
+  // Carry over bidding settings — numeric codes per BiddingStrategyType enum:
+  //   TARGET_CPA=6, TARGET_ROAS=8, MAXIMIZE_CONVERSIONS=10
   if (biddingType === '6' || biddingType === 'TARGET_CPA') {
     campaignPayload.target_cpa = { target_cpa_micros: src.campaign?.target_cpa?.target_cpa_micros ?? 1_000_000 }
-  } else if (biddingType === '18' || biddingType === 'TARGET_ROAS') {
+  } else if (biddingType === '8' || biddingType === 'TARGET_ROAS') {
     campaignPayload.target_roas = { target_roas: src.campaign?.target_roas?.target_roas ?? 2 }
-  } else if (biddingType === '9' || biddingType === 'MAXIMIZE_CONVERSIONS') {
+  } else if (biddingType === '10' || biddingType === 'MAXIMIZE_CONVERSIONS') {
     campaignPayload.maximize_conversions = {}
   } else {
     // Default to manual CPC
@@ -1308,9 +1310,11 @@ export async function getSearchTerms(
 
 // ─── Keywords ─────────────────────────────────────────────────────────────────
 
+// KeywordMatchType reverse-lookup map. Correct enum values per google-ads-api v23:
+//   UNSPECIFIED=0, UNKNOWN=1, EXACT=2, PHRASE=3, BROAD=4
 const MATCH_TYPE_NUM_MAP: Record<string, string> = {
   '0': 'UNKNOWN', '1': 'UNKNOWN',
-  '2': 'BROAD', '3': 'PHRASE', '4': 'EXACT', '5': 'BROAD',
+  '2': 'EXACT', '3': 'PHRASE', '4': 'BROAD',
   'UNSPECIFIED': 'UNKNOWN', 'UNKNOWN': 'UNKNOWN',
   'BROAD': 'BROAD', 'PHRASE': 'PHRASE', 'EXACT': 'EXACT',
   'BROAD_MATCH_MODIFIER': 'BROAD',
@@ -1565,10 +1569,13 @@ export interface DeviceRow {
   avgCpc:          number
 }
 
+// Device enum per google-ads-api v23:
+//   UNSPECIFIED=0, UNKNOWN=1, MOBILE=2, TABLET=3, DESKTOP=4, OTHER=5, CONNECTED_TV=6
 const DEVICE_NUM_MAP: Record<string, DeviceRow['device']> = {
-  '2': 'MOBILE',  'MOBILE':        'MOBILE',
-  '3': 'DESKTOP', 'DESKTOP':       'DESKTOP',
-  '4': 'TABLET',  'TABLET':        'TABLET',
+  '2': 'MOBILE',       'MOBILE':       'MOBILE',
+  '3': 'TABLET',       'TABLET':       'TABLET',
+  '4': 'DESKTOP',      'DESKTOP':      'DESKTOP',
+  '5': 'OTHER',        'OTHER':        'OTHER',
   '6': 'CONNECTED_TV', 'CONNECTED_TV': 'CONNECTED_TV',
 }
 
@@ -1872,8 +1879,9 @@ export async function getCampaignNegatives(
     .filter(n => n.text && n.criterionId)
 }
 
-const NEG_MATCH_TYPE_API: Record<string, number>  = { EXACT: 4, PHRASE: 3, BROAD: 2 }
-const KW_MATCH_TYPE_API:  Record<string, number>  = { EXACT: 4, PHRASE: 3, BROAD: 2 }
+// KeywordMatchType enum values per google-ads-api v23: EXACT=2, PHRASE=3, BROAD=4
+const NEG_MATCH_TYPE_API: Record<string, number>  = { EXACT: 2, PHRASE: 3, BROAD: 4 }
+const KW_MATCH_TYPE_API:  Record<string, number>  = { EXACT: 2, PHRASE: 3, BROAD: 4 }
 
 export async function addCampaignNegative(
   clientAccountId: string,
@@ -3208,16 +3216,17 @@ export async function getBidStrategy(
   let targetCpaMicros: number | null = null
   let targetRoas:      number | null = null
 
+  // BiddingStrategyType enum: TARGET_CPA=6, TARGET_ROAS=8, MAXIMIZE_CONVERSIONS=10, MAXIMIZE_CONVERSION_VALUE=11
   if (type === 'TARGET_CPA' || type === '6') {
     const v = Number(r.campaign?.target_cpa?.target_cpa_micros ?? 0)
     targetCpaMicros = v > 0 ? v : null
-  } else if (type === 'TARGET_ROAS' || type === '18') {
+  } else if (type === 'TARGET_ROAS' || type === '8') {
     const v = Number(r.campaign?.target_roas?.target_roas ?? 0)
     targetRoas = v > 0 ? v : null
-  } else if (type === 'MAXIMIZE_CONVERSIONS' || type === '9') {
+  } else if (type === 'MAXIMIZE_CONVERSIONS' || type === '10') {
     const v = Number(r.campaign?.maximize_conversions?.target_cpa_micros ?? 0)
     targetCpaMicros = v > 0 ? v : null
-  } else if (type === 'MAXIMIZE_CONVERSION_VALUE' || type === '10') {
+  } else if (type === 'MAXIMIZE_CONVERSION_VALUE' || type === '11') {
     const v = Number(r.campaign?.maximize_conversion_value?.target_roas ?? 0)
     targetRoas = v > 0 ? v : null
   }
@@ -3426,6 +3435,8 @@ export async function getRSAHealth(
     campaignName: String(r.campaign?.name ?? ''),
     adGroupName:  String(r.ad_group?.name ?? ''),
     adId:         String(r.ad_group_ad?.ad?.id ?? ''),
-    adStrength:   String(r.ad_group_ad?.ad_strength ?? 'UNSPECIFIED'),
+    // Google Ads returns ad_strength as a numeric enum code (e.g. 7 for EXCELLENT);
+    // normalise to the string names the frontend expects.
+    adStrength:   normalizeAdStrength(r.ad_group_ad?.ad_strength),
   }))
 }

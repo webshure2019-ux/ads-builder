@@ -247,12 +247,15 @@ export function RSACopyTab({ clientId, campaignId, startDate, endDate, currency 
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
   const [openId,  setOpenId]  = useState<string | null>(null)
-  const fetched = useRef(false)
+  const fetched = useRef('')
 
+  // Re-fetch whenever the client/campaign/date range changes (key-based guard,
+  // not a boolean — a boolean would stick after the first run and never refresh)
   useEffect(() => {
-    if (fetched.current) return
-    fetched.current = true
-    setLoading(true)
+    const key = `${clientId}|${campaignId}|${startDate}|${endDate}`
+    if (fetched.current === key) return
+    fetched.current = key
+    setLoading(true); setError('')
     fetch(`/api/ads?client_account_id=${clientId}&campaign_id=${campaignId}&start_date=${startDate}&end_date=${endDate}`)
       .then(r => r.json())
       .then(d => {
@@ -263,7 +266,7 @@ export function RSACopyTab({ clientId, campaignId, startDate, endDate, currency 
         )
         setAds(rsas)
       })
-      .catch(e => setError(String(e)))
+      .catch(e => { setError(String(e)); fetched.current = '' })
       .finally(() => setLoading(false))
   }, [clientId, campaignId, startDate, endDate])
 

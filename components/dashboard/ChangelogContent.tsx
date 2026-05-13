@@ -37,6 +37,12 @@ const FEATURES: { emoji: string; text: string; date: string }[] = [
 ]
 
 const FIXES: { text: string; date: string }[] = [
+  { text: '⚠️ CRITICAL — Fixed keyword & negative match types: EXACT and BROAD were swapped throughout the codebase, so keywords added via this app were saved to Google Ads with the wrong match type (and read back with a matching wrong label, hiding the bug). Newly added keywords will now have the correct match type. We recommend auditing existing keywords/negatives in Google Ads directly to verify their match types are what you intended.', date: '13 May 2026' },
+  { text: '⚠️ CRITICAL — Fixed Device Performance: DESKTOP and TABLET were swapped in the device-code mapping. Numeric API responses (e.g. for non-Search campaigns) were displaying Desktop traffic as Tablet and vice versa. Existing scoped performance reads should be re-loaded to see correct numbers.', date: '13 May 2026' },
+  { text: '⚠️ Fixed Bid Strategy numeric codes: the API code → strategy name map had nearly every value wrong (e.g. 9 was labelled MAXIMIZE_CONVERSIONS, but 9 is actually TARGET_SPEND / Maximize Clicks). Campaigns may now display a different bid strategy label than before — this is the actual strategy in Google Ads, not a change.', date: '13 May 2026' },
+  { text: 'Fixed RSA Health Section — ad-strength numeric codes (e.g. 7 = EXCELLENT) were not being normalised to string names, so the per-ad badges were stuck on UNSPECIFIED in some accounts', date: '13 May 2026' },
+  { text: 'Fixed A/B Test tab — data did not refresh when switching client/campaign/date range (boolean `useRef(false)` guard stuck after first fetch); also fixed hardcoded "$" currency symbol on per-ad cost', date: '13 May 2026' },
+  { text: 'Fixed RSA Copy tab — same stale-data issue (boolean fetched guard) prevented refresh on client/campaign/date change', date: '13 May 2026' },
   { text: 'Fixed Search Terms tab — was incorrectly shown for Performance Max campaigns (which don\'t expose traditional search terms); now hidden for PMax alongside Keywords, RSA Copy, and A/B Test tabs', date: '13 May 2026' },
   { text: 'Fixed Top Movers — previous-period data now auto-refreshes when the date range changes while the section is open (was stuck showing stale data)', date: '13 May 2026' },
   { text: 'Fixed RSA Health Section — client-switch re-fetch was firing during React render instead of in a useEffect, causing double-fetches and stale data in Strict Mode', date: '13 May 2026' },

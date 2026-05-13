@@ -4,6 +4,10 @@ import type { BidStrategyData } from '@/lib/google-ads'
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
+// BiddingStrategyType numeric codes per google-ads-api v23:
+//   ENHANCED_CPC=2, MANUAL_CPC=3, TARGET_CPA=6, TARGET_ROAS=8, TARGET_SPEND=9,
+//   MAXIMIZE_CONVERSIONS=10, MAXIMIZE_CONVERSION_VALUE=11, TARGET_IMPRESSION_SHARE=15
+// Note: Google's "Maximize Clicks" UI option is `target_spend` in the API.
 const STRATEGY_LABELS: Record<string, string> = {
   MANUAL_CPC:               'Manual CPC',
   MAXIMIZE_CLICKS:          'Maximize Clicks',
@@ -12,31 +16,33 @@ const STRATEGY_LABELS: Record<string, string> = {
   TARGET_CPA:               'Target CPA',
   TARGET_ROAS:              'Target ROAS',
   ENHANCED_CPC:             'Enhanced CPC',
-  TARGET_SPEND:             'Target Spend',
+  TARGET_SPEND:             'Maximize Clicks',         // TARGET_SPEND is the API name for Maximize Clicks
   TARGET_IMPRESSION_SHARE:  'Target Impression Share',
   // numeric fallbacks
-  '3': 'Manual CPC',
-  '4': 'Enhanced CPC',
-  '6': 'Target CPA',
-  '7': 'Maximize Clicks',
-  '8': 'Target Spend',
-  '9': 'Maximize Conversions',
-  '10': 'Maximize Conv. Value',
-  '16': 'Target Impression Share',
-  '18': 'Target ROAS',
+  '2':  'Enhanced CPC',
+  '3':  'Manual CPC',
+  '6':  'Target CPA',
+  '8':  'Target ROAS',
+  '9':  'Maximize Clicks',                              // TARGET_SPEND
+  '10': 'Maximize Conversions',
+  '11': 'Maximize Conv. Value',
+  '15': 'Target Impression Share',
 }
 
 const STRATEGY_COLORS: Record<string, string> = {
   TARGET_CPA:               'bg-emerald-100 text-emerald-800 border-emerald-300',
   '6':                      'bg-emerald-100 text-emerald-800 border-emerald-300',
   TARGET_ROAS:              'bg-cyan/10 text-cyan-900 border-cyan/30',
-  '18':                     'bg-cyan/10 text-cyan-900 border-cyan/30',
+  '8':                      'bg-cyan/10 text-cyan-900 border-cyan/30',
   MAXIMIZE_CONVERSIONS:     'bg-violet-100 text-violet-800 border-violet-300',
-  '9':                      'bg-violet-100 text-violet-800 border-violet-300',
+  '10':                     'bg-violet-100 text-violet-800 border-violet-300',
   MAXIMIZE_CONVERSION_VALUE:'bg-purple-100 text-purple-800 border-purple-300',
-  '10':                     'bg-purple-100 text-purple-800 border-purple-300',
+  '11':                     'bg-purple-100 text-purple-800 border-purple-300',
   MAXIMIZE_CLICKS:          'bg-blue-100 text-blue-800 border-blue-200',
-  '7':                      'bg-blue-100 text-blue-800 border-blue-200',
+  TARGET_SPEND:             'bg-blue-100 text-blue-800 border-blue-200',
+  '9':                      'bg-blue-100 text-blue-800 border-blue-200',
+  ENHANCED_CPC:             'bg-sky-50 text-sky-800 border-sky-200',
+  '2':                      'bg-sky-50 text-sky-800 border-sky-200',
   MANUAL_CPC:               'bg-cloud text-navy/70 border-cloud',
   '3':                      'bg-cloud text-navy/70 border-cloud',
 }
@@ -61,17 +67,19 @@ const EDITABLE_STRATEGIES = [
   { value: 'TARGET_ROAS',              label: 'Target ROAS' },
 ]
 
-// Maps Google Ads API numeric bidding strategy codes → canonical string names
+// Maps Google Ads API numeric bidding strategy codes → canonical string names.
+// Per google-ads-api v23 BiddingStrategyType enum:
+//   ENHANCED_CPC=2, MANUAL_CPC=3, TARGET_CPA=6, TARGET_ROAS=8, TARGET_SPEND=9,
+//   MAXIMIZE_CONVERSIONS=10, MAXIMIZE_CONVERSION_VALUE=11, TARGET_IMPRESSION_SHARE=15
 const NUMERIC_TO_STRATEGY: Record<string, string> = {
-  '3': 'MANUAL_CPC',
-  '4': 'ENHANCED_CPC',
-  '6': 'TARGET_CPA',
-  '7': 'MAXIMIZE_CLICKS',
-  '8': 'TARGET_SPEND',
-  '9': 'MAXIMIZE_CONVERSIONS',
-  '10': 'MAXIMIZE_CONVERSION_VALUE',
-  '16': 'TARGET_IMPRESSION_SHARE',
-  '18': 'TARGET_ROAS',
+  '2':  'ENHANCED_CPC',
+  '3':  'MANUAL_CPC',
+  '6':  'TARGET_CPA',
+  '8':  'TARGET_ROAS',
+  '9':  'MAXIMIZE_CLICKS',                              // TARGET_SPEND ↔ Maximize Clicks (Google UI alias)
+  '10': 'MAXIMIZE_CONVERSIONS',
+  '11': 'MAXIMIZE_CONVERSION_VALUE',
+  '15': 'TARGET_IMPRESSION_SHARE',
 }
 
 // ─── Edit panel ────────────────────────────────────────────────────────────────

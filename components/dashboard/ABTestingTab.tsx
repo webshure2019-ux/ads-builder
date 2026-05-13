@@ -94,8 +94,8 @@ function headlinePreview(ad: AdData): string {
 
 // ─── Ad card ─────────────────────────────────────────────────────────────────
 function AdVariantCard({
-  ad, label, isWinner, tests,
-}: { ad: AdData; label: 'A' | 'B'; isWinner: boolean; tests: TestResult[] }) {
+  ad, label, isWinner, tests, currency,
+}: { ad: AdData; label: 'A' | 'B'; isWinner: boolean; tests: TestResult[]; currency: string }) {
   const winBg    = isWinner ? 'border-emerald-300 bg-emerald-50/50' : 'border-cloud bg-white'
   const labelCfg = isWinner
     ? 'bg-emerald-500 text-white'
@@ -147,7 +147,7 @@ function AdVariantCard({
         </div>
         <div>
           <p className="text-navy/40 uppercase tracking-wide text-[9px]">Cost</p>
-          <p className="font-bold text-navy">${ad.cost.toFixed(2)}</p>
+          <p className="font-bold text-navy">{currency} {ad.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         </div>
       </div>
 
@@ -163,10 +163,11 @@ function AdVariantCard({
 }
 
 // ─── Ad group test section ────────────────────────────────────────────────────
-function AdGroupTest({ groupName, adA, adB }: {
+function AdGroupTest({ groupName, adA, adB, currency }: {
   groupName: string
   adA: AdData
   adB: AdData
+  currency: string
 }) {
   const tests = runTests(adA, adB)
   const ctrTest = tests.find(t => t.metric === 'CTR')!
@@ -211,6 +212,7 @@ function AdGroupTest({ groupName, adA, adB }: {
           label="A"
           isWinner={overallWinner === 'A'}
           tests={tests}
+          currency={currency}
         />
         <div className="flex items-center justify-center flex-shrink-0 text-navy/20 font-bold text-sm">
           vs
@@ -220,6 +222,7 @@ function AdGroupTest({ groupName, adA, adB }: {
           label="B"
           isWinner={overallWinner === 'B'}
           tests={tests}
+          currency={currency}
         />
       </div>
 
@@ -286,23 +289,26 @@ interface Props {
   currency:   string
 }
 
-export function ABTestingTab({ clientId, campaignId, startDate, endDate }: Props) {
+export function ABTestingTab({ clientId, campaignId, startDate, endDate, currency }: Props) {
   const [ads,     setAds]     = useState<AdData[]>([])
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
-  const fetched = useRef(false)
+  const fetched = useRef('')
 
+  // Re-fetch whenever the client/campaign/date range changes (key-based guard,
+  // not a boolean — a boolean would stick after the first run and never refresh)
   useEffect(() => {
-    if (fetched.current) return
-    fetched.current = true
-    setLoading(true)
+    const key = `${clientId}|${campaignId}|${startDate}|${endDate}`
+    if (fetched.current === key) return
+    fetched.current = key
+    setLoading(true); setError('')
     fetch(`/api/ads?client_account_id=${clientId}&campaign_id=${campaignId}&start_date=${startDate}&end_date=${endDate}`)
       .then(r => r.json())
       .then(d => {
         if (d.error) throw new Error(d.error)
         setAds(d.ads ?? [])
       })
-      .catch(e => setError(String(e)))
+      .catch(e => { setError(String(e)); fetched.current = '' })
       .finally(() => setLoading(false))
   }, [clientId, campaignId, startDate, endDate])
 
@@ -379,6 +385,7 @@ export function ABTestingTab({ clientId, campaignId, startDate, endDate }: Props
             groupName={group.name}
             adA={pair[0]}
             adB={pair[1]}
+            currency={currency}
           />
         )
       })}
