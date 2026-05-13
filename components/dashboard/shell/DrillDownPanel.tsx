@@ -148,8 +148,10 @@ export function DrillDownPanel({ campaign, clientId, currency, startDate, endDat
           >✕</button>
         </header>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto">
+        {/* Body. `ws-themed-surface` activates dark-mode recolouring for the
+            legacy hardcoded colours inside CampaignDrillDown (text-navy,
+            bg-white, etc. — see globals.css). */}
+        <div className="ws-themed-surface flex-1 overflow-y-auto">
           {campaign && (
             <CampaignDrillDown
               campaignId={campaign.id}

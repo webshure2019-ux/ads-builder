@@ -141,8 +141,10 @@ export function InsightPanel({ activeId, onClose, children }: Props) {
           </button>
         </header>
 
-        {/* Panel body */}
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        {/* Panel body. `ws-themed-surface` activates dark-mode recolouring
+            for any legacy Webshure colour classes (text-navy/X, bg-white,
+            bg-mist, border-cloud …) used by the section components inside. */}
+        <div className="ws-themed-surface flex-1 overflow-y-auto px-5 py-4">
           {children}
         </div>
       </div>

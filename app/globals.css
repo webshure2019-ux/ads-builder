@@ -235,6 +235,29 @@ thead .ct-stick { background: inherit; z-index: 11; }
 .dark .ct-toolbar [class*="text-teal"] { color: var(--text-3); }
 .dark .ct-toolbar [class*="border-cloud"] { border-color: var(--border-lo); }
 
+/* ── Themed surface — used by InsightPanel body + DrillDownPanel body ──
+   Patches the legacy section components (built before dark mode existed)
+   so their hardcoded Webshure colours adapt when shown in a dark panel.
+   Tailwind built-in scales (cyan-700, emerald-50, amber-700 …) are left
+   alone — only the Webshure custom palette (navy/teal/mist/cloud/white)
+   is recoloured. */
+.dark .ws-themed-surface [class*="bg-white"]     { background: var(--surface-hi); }
+.dark .ws-themed-surface [class*="bg-mist"]      { background: var(--surface-lo); }
+.dark .ws-themed-surface [class*="bg-cloud"]     { background: var(--surface-lo); }
+.dark .ws-themed-surface [class*="border-cloud"] { border-color: var(--border-lo); }
+.dark .ws-themed-surface [class*="text-navy"]    { color: var(--text-1); }
+/* text-teal needs precision so we don't recolour Tailwind's teal-700 (used
+   on status badges); match only `text-teal` exactly and `text-teal/...`. */
+.dark .ws-themed-surface [class~="text-teal"],
+.dark .ws-themed-surface [class*="text-teal/"]   { color: var(--text-3); }
+/* Lighten text-navy when used at lower opacity (text-navy/40 etc. is meant
+   to be secondary in light mode → matches text-3 in dark). */
+.dark .ws-themed-surface [class*="text-navy/3"],
+.dark .ws-themed-surface [class*="text-navy/4"],
+.dark .ws-themed-surface [class*="text-navy/5"] { color: var(--text-3); }
+.dark .ws-themed-surface [class*="text-navy/6"],
+.dark .ws-themed-surface [class*="text-navy/7"] { color: var(--text-2); }
+
 /* ── Scrollbar ─────────────────────────────────────────────── */
 ::-webkit-scrollbar        { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track  { background: transparent; }
