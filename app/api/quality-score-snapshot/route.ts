@@ -6,20 +6,31 @@ import { googleAdsErrorMessage } from '@/lib/error-utils'
 
 export const dynamic = 'force-dynamic'
 
-/*
-  Required Supabase table (run once in Supabase SQL editor):
+// Run-once Supabase setup. Surfaced to the UI when the table is missing so
+// the user can copy/paste it into the Supabase SQL editor without leaving
+// the app.
+const SETUP_SQL = `create table if not exists keyword_qs_snapshots (
+  id                uuid primary key default gen_random_uuid(),
+  client_account_id text    not null,
+  campaign_id       text    not null,
+  keyword_id        text    not null,
+  keyword_text      text    not null,
+  quality_score     integer,
+  created_at        timestamptz not null default now()
+);
 
-  create table if not exists keyword_qs_snapshots (
-    id                uuid primary key default gen_random_uuid(),
-    client_account_id text    not null,
-    campaign_id       text    not null,
-    keyword_id        text    not null,
-    keyword_text      text    not null,
-    quality_score     integer,
-    created_at        timestamptz not null default now()
-  );
-  create index on keyword_qs_snapshots (client_account_id, created_at desc);
-*/
+create index if not exists keyword_qs_snapshots_client_created_idx
+  on keyword_qs_snapshots (client_account_id, created_at desc);
+
+-- (Optional but recommended) lock the table down with RLS:
+alter table keyword_qs_snapshots enable row level security;`
+
+/** Detect the PostgREST schema-cache miss thrown when the table doesn't exist yet. */
+function isMissingTable(msg: string): boolean {
+  return /Could not find the table.*keyword_qs_snapshots/i.test(msg)
+      || /relation .*keyword_qs_snapshots.* does not exist/i.test(msg)
+      || /PGRST20[12]/.test(msg)
+}
 
 // GET /api/quality-score-snapshot?client_account_id=...
 // Returns snapshot history (list of { date, distribution, avgQs })
@@ -67,7 +78,11 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ snapshots })
   } catch (err: unknown) {
-    return NextResponse.json({ error: String(err) }, { status: 500 })
+    const msg = err instanceof Error ? err.message : String(err)
+    if (isMissingTable(msg)) {
+      return NextResponse.json({ snapshots: [], needsSetup: true, setupSql: SETUP_SQL })
+    }
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 
@@ -108,6 +123,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, saved: rows.length })
   } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (isMissingTable(msg)) {
+      return NextResponse.json(
+        { error: 'Quality Score Tracker storage table is missing. Run the setup SQL shown in the panel first.', needsSetup: true, setupSql: SETUP_SQL },
+        { status: 503 },
+      )
+    }
     return NextResponse.json(
       { error: googleAdsErrorMessage(err, 'Failed to save QS snapshot') },
       { status: 500 },

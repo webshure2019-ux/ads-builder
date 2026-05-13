@@ -42,21 +42,37 @@ export function QualityScoreSection({ clientId, startDate, endDate }: {
   const [error,      setError]      = useState('')
   const [saveMsg,    setSaveMsg]    = useState('')
   const [expanded,   setExpanded]   = useState<string | null>(null) // expanded snapshot date
+  const [setupSql,   setSetupSql]   = useState<string | null>(null) // populated when Supabase table missing
+  const [copied,     setCopied]     = useState(false)
   const fetchedKey = useRef('')
 
   function fetchHistory(force = false) {
     const key = clientId
     if (!force && fetchedKey.current === key) return
     fetchedKey.current = key
-    setLoading(true); setError('')
+    setLoading(true); setError(''); setSetupSql(null)
     fetch(`/api/quality-score-snapshot?client_account_id=${encodeURIComponent(clientId)}`)
       .then(async r => {
         const d = await r.json()
         if (!r.ok) throw new Error(d.error)
-        setSnapshots(d.snapshots ?? [])
+        if (d.needsSetup) {
+          setSetupSql(d.setupSql ?? null)
+          setSnapshots([])
+        } else {
+          setSnapshots(d.snapshots ?? [])
+        }
       })
       .catch(e => { setError(e.message); fetchedKey.current = '' })
       .finally(() => setLoading(false))
+  }
+
+  async function copySql() {
+    if (!setupSql) return
+    try {
+      await navigator.clipboard.writeText(setupSql)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch {/* noop */}
   }
 
   function toggle() {
@@ -76,7 +92,13 @@ export function QualityScoreSection({ clientId, startDate, endDate }: {
         body: JSON.stringify({ client_account_id: clientId, start_date: startDate, end_date: endDate }),
       })
       const d = await res.json()
-      if (!res.ok) throw new Error(d.error)
+      if (!res.ok) {
+        if (d.needsSetup) {
+          setSetupSql(d.setupSql ?? null)
+          throw new Error('Run the setup SQL below first, then take a snapshot.')
+        }
+        throw new Error(d.error)
+      }
       setSaveMsg(`✓ Snapshot saved — ${d.saved} keywords recorded`)
       fetchHistory(true)
       setTimeout(() => setSaveMsg(''), 4000)
@@ -113,9 +135,47 @@ export function QualityScoreSection({ clientId, startDate, endDate }: {
               <div className="w-4 h-4 border-2 border-cyan border-t-transparent rounded-full animate-spin" />
               Loading QS history…
             </div>
-          ) : error ? (
+          ) : error && !setupSql ? (
             <p className="text-xs text-red-500">{error}</p>
           ) : null}
+
+          {/* Supabase setup card — shown when the storage table is missing */}
+          {setupSql && (
+            <div
+              className="rounded-2xl px-4 py-4"
+              style={{ background: 'rgba(255, 138, 48, 0.08)', border: '1px solid rgba(255, 138, 48, 0.30)' }}
+            >
+              <div className="flex items-start gap-3 mb-3">
+                <span className="text-2xl flex-shrink-0">🛠</span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-heading font-bold text-sm" style={{ color: 'var(--text-1)' }}>
+                    One-time Supabase setup
+                  </p>
+                  <p className="text-xs leading-relaxed mt-1" style={{ color: 'var(--text-2)' }}>
+                    Quality Score Tracker stores its snapshots in Supabase. Run this SQL once in
+                    your <strong>Supabase project → SQL Editor</strong>, then click <em>Take QS Snapshot</em> below.
+                  </p>
+                </div>
+                <button
+                  onClick={copySql}
+                  className="text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap flex-shrink-0"
+                  style={{ background: copied ? '#10b981' : '#31C0FF', color: '#052E4B' }}
+                >
+                  {copied ? '✓ Copied' : '📋 Copy SQL'}
+                </button>
+              </div>
+              <pre
+                className="text-[11px] font-mono leading-relaxed overflow-x-auto p-3 rounded-xl"
+                style={{
+                  background: 'rgba(5, 22, 40, 0.04)',
+                  border:     '1px solid rgba(0, 0, 0, 0.06)',
+                  color:      'var(--text-1)',
+                  whiteSpace: 'pre',
+                }}
+              >{setupSql}</pre>
+              {error && <p className="text-[11px] mt-2" style={{ color: '#dc2626' }}>{error}</p>}
+            </div>
+          )}
 
           {/* Take snapshot button */}
           <div className="flex items-center gap-3 flex-wrap">
@@ -129,16 +189,11 @@ export function QualityScoreSection({ clientId, startDate, endDate }: {
           </div>
           {saveMsg && <p className="text-xs text-teal">{saveMsg}</p>}
 
-          {snapshots.length === 0 && !loading ? (
+          {snapshots.length === 0 && !loading && !setupSql ? (
             <div className="text-center py-8 text-teal text-sm">
               No snapshots yet — take your first snapshot to start tracking QS trends.
-              <br />
-              <span className="text-[11px] text-navy/40">
-                Note: requires the <code className="bg-cloud px-1 rounded">keyword_qs_snapshots</code> Supabase table.
-                See the API route comments for the CREATE TABLE SQL.
-              </span>
             </div>
-          ) : (
+          ) : snapshots.length === 0 && !loading ? null : (
             <div className="space-y-3">
               {/* QS history list */}
               {snapshots.map(snap => (
