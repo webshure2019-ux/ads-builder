@@ -178,14 +178,14 @@ function CompareToggle({ compare, onChange }: { compare: boolean; onChange: (v: 
   )
 }
 
-// ─── Command palette hint ─────────────────────────────────────────────────────
+// ─── Command palette hint (also doubles as the mobile section opener) ──────
 function CommandHint({ onClick }: { onClick: () => void }) {
   const [mac, setMac] = useState(true)
   useEffect(() => { setMac(navigator.platform.toUpperCase().includes('MAC')) }, [])
   return (
     <button
       onClick={onClick}
-      className="hidden md:inline-flex items-center gap-1.5 px-2.5 h-9 rounded-xl text-[11px] transition-all hover:border-cyan/40"
+      className="inline-flex items-center gap-1.5 px-2.5 h-9 rounded-xl text-[11px] transition-all hover:border-cyan/40"
       style={{
         background:  'var(--input-bg)',
         border:      '1px solid var(--border)',
@@ -193,7 +193,8 @@ function CommandHint({ onClick }: { onClick: () => void }) {
       }}
       title="Command palette"
     >
-      <span style={{ color: 'var(--text-2)' }}>Search</span>
+      <span className="hidden sm:inline" style={{ color: 'var(--text-2)' }}>Search</span>
+      <span className="sm:hidden text-base leading-none">⌕</span>
       <kbd className="px-1.5 py-0.5 rounded-md text-[9px] font-mono tabular-nums" style={{ background: 'var(--surface-lo)', border: '1px solid var(--border-lo)' }}>
         {mac ? '⌘' : 'Ctrl'}K
       </kbd>
@@ -212,6 +213,12 @@ export function TopControlBar({
   const [showCustom, setShowCustom] = useState(preset === 'custom')
 
   useEffect(() => { setShowCustom(preset === 'custom') }, [preset])
+
+  // Keep --controls-h in sync with the actual bar height (which grows when
+  // the custom date row appears). Panels below read it to offset their `top`.
+  useEffect(() => {
+    document.documentElement.style.setProperty('--controls-h', showCustom ? '96px' : '52px')
+  }, [showCustom])
 
   return (
     <div

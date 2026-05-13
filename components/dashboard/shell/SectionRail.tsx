@@ -66,8 +66,8 @@ export function SectionRail({
     <aside
       className="hidden md:flex flex-col py-2 sticky overflow-y-auto"
       style={{
-        top:        'calc(var(--nav-h, 56px) + 52px)', // below Nav + TopControlBar
-        height:     'calc(100vh - var(--nav-h, 56px) - 52px)',
+        top:        'calc(var(--nav-h, 56px) + var(--controls-h, 52px))',
+        height:     'calc(100vh - var(--nav-h, 56px) - var(--controls-h, 52px))',
         width:      'var(--rail-w, 56px)',
         background: 'var(--surface-lo)',
         borderRight:'1px solid var(--border-lo)',

@@ -458,7 +458,7 @@ export function ClientDashboard() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [activeKpi, activeSection, preset, clientId, compare, customStart, customEnd]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeKpi, activeSection, drillCampaign, preset, clientId, compare, customStart, customEnd]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Range label for the top bar
   const rangeLabel = stats && rs && re
@@ -547,11 +547,15 @@ export function ClientDashboard() {
           badges={badges}
         />
 
-        {/* Main content */}
+        {/* Main content. When a side panel is open AND the viewport is wide
+            enough (--panel-push > 0), reserve space so the content reflows
+            beside the panel. On narrower viewports the panel overlays. */}
         <div
           className="flex-1 min-w-0 px-5 py-3 space-y-3 transition-[padding] duration-200"
           style={{
-            paddingRight: (activeSection || drillCampaign) ? 'calc(var(--panel-w, 720px) + 1.25rem)' : '1.25rem',
+            paddingRight: (activeSection || drillCampaign)
+              ? 'calc(var(--panel-push, 0px) + 1.25rem)'
+              : '1.25rem',
           }}
         >
           {/* Empty / loading / error states */}

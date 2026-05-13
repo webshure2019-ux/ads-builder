@@ -31,11 +31,18 @@ export function DrillDownPanel({ campaign, clientId, currency, startDate, endDat
         const w = parseInt(stored, 10)
         if (w >= MIN_W && w <= MAX_W) {
           widthRef.current = w
-          if (wrap.current) wrap.current.style.setProperty('--panel-w', `${w}px`)
+          document.documentElement.style.setProperty('--panel-w', `${w}px`)
         }
       }
     } catch {}
   }, [])
+
+  // When this panel opens, push its width to the root so the layout reflows.
+  useEffect(() => {
+    if (campaign) {
+      document.documentElement.style.setProperty('--panel-w', `${widthRef.current}px`)
+    }
+  }, [campaign])
 
   // ESC closes, j/k navigates between campaigns when prev/next provided
   useEffect(() => {
@@ -64,7 +71,7 @@ export function DrillDownPanel({ campaign, clientId, currency, startDate, endDat
     const dx    = dragRef.current.startX - e.clientX
     const nextW = Math.max(MIN_W, Math.min(MAX_W, dragRef.current.startW + dx))
     widthRef.current = nextW
-    wrap.current.style.setProperty('--panel-w', `${nextW}px`)
+    document.documentElement.style.setProperty('--panel-w', `${nextW}px`)
   }
   function onDragEnd(e: React.PointerEvent) {
     if (!dragRef.current) return
@@ -80,7 +87,7 @@ export function DrillDownPanel({ campaign, clientId, currency, startDate, endDat
       ref={wrap}
       className="fixed right-0 z-30 flex transition-transform duration-200 ease-out"
       style={{
-        top:    'calc(var(--nav-h, 56px) + 52px)',
+        top:    'calc(var(--nav-h, 56px) + var(--controls-h, 52px))',
         bottom: 0,
         width:  'var(--panel-w, 820px)',
         transform:      campaign ? 'translateX(0)' : 'translateX(calc(100% + 4px))',
@@ -153,6 +160,7 @@ export function DrillDownPanel({ campaign, clientId, currency, startDate, endDat
               endDate={endDate}
               channelType={campaign.channel_type}
               onClose={onClose}
+              embedded
             />
           )}
         </div>

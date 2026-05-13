@@ -589,17 +589,26 @@ export function CampaignsTable({
   }
 
   if (campaigns.length === 0) return (
-    <div className="bg-white border border-cloud rounded-2xl p-12 text-center">
+    <div
+      className="rounded-2xl p-12 text-center"
+      style={{ background: 'var(--surface)', border: '1px solid var(--border-lo)', color: 'var(--text-2)' }}
+    >
       <p className="text-2xl mb-3">📋</p>
-      <p className="text-sm text-teal">No campaigns found for this period.</p>
+      <p className="text-sm">No campaigns found for this period.</p>
     </div>
   )
 
   return (
-    <div className="bg-white border border-cloud rounded-2xl overflow-hidden">
+    <div
+      className="rounded-2xl overflow-hidden"
+      style={{ background: 'var(--surface)', border: '1px solid var(--border-lo)' }}
+    >
 
       {/* ── Toolbar ── */}
-      <div className="px-5 py-2.5 border-b border-cloud/60 flex items-center justify-between gap-3 flex-wrap">
+      <div
+        className="ct-toolbar px-5 py-2.5 flex items-center justify-between gap-3 flex-wrap"
+        style={{ borderBottom: '1px solid var(--border-lo)' }}
+      >
         <p className="text-[11px] text-teal">
           {visible.length} campaign{visible.length !== 1 ? 's' : ''}
           {!showInactive && sorted.length !== visible.length && (
@@ -672,8 +681,8 @@ export function CampaignsTable({
         <table className="w-full text-sm min-w-[900px]">
 
           {/* ── Header ── */}
-          <thead className="sticky top-0 z-10 bg-mist">
-            <tr className="border-b border-cloud">
+          <thead className="ct-thead sticky top-0 z-10">
+            <tr style={{ borderBottom: '1px solid var(--border-lo)' }}>
               <th className="ct-stick ct-stick-cb w-10 px-3 py-3.5 text-center">
                 <input
                   type="checkbox"
@@ -711,7 +720,7 @@ export function CampaignsTable({
           </thead>
 
           {/* ── Rows ── */}
-          <tbody className="divide-y divide-cloud">
+          <tbody className="ct-tbody">
             {visible.map(c => {
               const active      = isActive(c.status)
               const isDrillOpen = expandedId === c.id
@@ -823,15 +832,15 @@ export function CampaignsTable({
 
           {/* ── Totals footer ── */}
           <tfoot>
-            <tr className="border-t-2 border-cloud/70 bg-mist">
+            <tr className="ct-tfoot">
               <td />{/* Checkbox */}
               <td className="px-5 py-3.5">
-                <p className="text-[11px] font-heading font-bold text-navy">Total</p>
-                <p className="text-[10px] text-teal mt-0.5">{visible.length} campaign{visible.length !== 1 ? 's' : ''}</p>
+                <p className="text-[11px] font-heading font-bold" style={{ color: 'var(--text-1)' }}>Total</p>
+                <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-3)' }}>{visible.length} campaign{visible.length !== 1 ? 's' : ''}</p>
               </td>
               <td /><td />{/* Status · Daily Budget */}
               {visibleCols.map(col => (
-                <td key={col.key} className="px-4 py-3.5 text-right tabular-nums font-bold text-navy text-xs whitespace-nowrap">
+                <td key={col.key} className="px-4 py-3.5 text-right tabular-nums font-bold text-xs whitespace-nowrap" style={{ color: 'var(--text-1)' }}>
                   {footerVal(col)}
                 </td>
               ))}

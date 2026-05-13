@@ -1198,9 +1198,13 @@ interface Props {
   endDate:      string
   channelType:  string
   onClose:      () => void
+  /** When true, the built-in header (with name + close button) is hidden because
+   *  the parent (e.g. DrillDownPanel) is providing its own chrome. The ESC
+   *  handler is also disabled to avoid double-handling. */
+  embedded?:    boolean
 }
 
-export function CampaignDrillDown({ campaignId, campaignName, clientId, currency, startDate, endDate, channelType, onClose }: Props) {
+export function CampaignDrillDown({ campaignId, campaignName, clientId, currency, startDate, endDate, channelType, onClose, embedded }: Props) {
   const isPMax = channelType === 'PERFORMANCE_MAX' || channelType === '10'
   const isSearch = channelType === 'SEARCH' || channelType === '2'
 
@@ -1238,36 +1242,44 @@ export function CampaignDrillDown({ campaignId, campaignName, clientId, currency
       .finally(() => setAxLoading(false))
   }, [axFetched, isPMax, clientId, campaignId, startDate, endDate])
 
-  // Escape to close
+  // Escape to close — only when NOT embedded in a parent panel (which has its
+  // own ESC handling and would double-fire).
   useEffect(() => {
+    if (embedded) return
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, embedded])
 
   const groupsLabel = isPMax ? 'Asset Groups' : 'Ad Groups'
 
   return (
     <div>
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-cloud bg-mist">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <p className="font-heading font-bold text-navy text-sm truncate" title={campaignName}>{campaignName}</p>
-          {isPMax && (
-            <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full flex-shrink-0">⚡ PMax</span>
-          )}
-        </div>
-        <button
-          onClick={onClose}
-          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-cloud text-navy/40 hover:text-navy text-lg transition-colors flex-shrink-0"
-          title="Close"
+      {/* ── Built-in header — hidden when embedded in a parent panel ── */}
+      {!embedded && (
+        <div
+          className="flex items-center justify-between px-5 py-3.5"
+          style={{ borderBottom: '1px solid var(--border-lo)', background: 'var(--surface-lo)' }}
         >
-          ×
-        </button>
-      </div>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <p className="font-heading font-bold text-sm truncate" style={{ color: 'var(--text-1)' }} title={campaignName}>{campaignName}</p>
+            {isPMax && (
+              <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full flex-shrink-0">⚡ PMax</span>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-cyan/10 text-lg transition-colors flex-shrink-0"
+            style={{ color: 'var(--text-3)' }}
+            title="Close"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* ── Tab bar ── */}
-      <div className="flex items-center gap-1 px-5 pt-4 pb-0 border-b border-cloud">
+      <div className="flex items-center gap-1 px-5 pt-4 pb-0 overflow-x-auto" style={{ borderBottom: '1px solid var(--border-lo)' }}>
         {([
           { id: 'groups'       as DrillTab, label: groupsLabel },
           { id: 'keywords'     as DrillTab, label: '🎯 Keywords',  hidden: isPMax },

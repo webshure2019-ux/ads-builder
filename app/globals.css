@@ -22,6 +22,16 @@
   --controls-h:   52px;
   --rail-w:       56px;
   --panel-w:      720px;
+  --panel-push:   var(--panel-w);   /* push amount for main content; collapses on small viewports */
+}
+
+/* On viewports narrower than the panel + 480px of working area, the right
+   panel becomes an overlay rather than pushing the main content sideways. */
+@media (min-width: 1200px) {
+  :root { --panel-push: var(--panel-w); }
+}
+@media (max-width: 1199px) {
+  :root { --panel-push: 0px; }
 }
 
 .dark {
@@ -148,18 +158,26 @@
   }
 }
 
-/* ── Campaigns table — frozen-column behaviour ─────────────── */
-/* Sticky cells reference the row's --row-bg so they stay readable
-   as the body scrolls horizontally and never go transparent. */
+/* ── Campaigns table — themed surfaces + frozen columns ───── */
+/* Solid (opaque) row backgrounds so the sticky cells don't show
+   the metric cells bleeding through during horizontal scroll. */
 .ct-row {
-  --row-bg: var(--surface);
+  --row-bg: #ffffff;
+  color: var(--text-1);
 }
-.ct-row:hover { --row-bg: var(--surface-hi); }
-.ct-row.ct-selected { --row-bg: rgba(49,192,255,0.08); }
+.ct-row:hover       { --row-bg: #f4fafd; }                   /* mist */
+.ct-row.ct-selected { --row-bg: #e6f8ff; }                   /* cyan-50 */
 
-.dark .ct-row { --row-bg: rgba(255,255,255,0.02); }
-.dark .ct-row:hover { --row-bg: rgba(49,192,255,0.06); }
-.dark .ct-row.ct-selected { --row-bg: rgba(49,192,255,0.14); }
+.dark .ct-row              { --row-bg: #0d1726; }
+.dark .ct-row:hover        { --row-bg: #112236; }
+.dark .ct-row.ct-selected  { --row-bg: #102a40; }
+
+.ct-thead { background: #f4fafd; }
+.dark .ct-thead { background: #0b1422; }
+
+.ct-tbody tr + tr { border-top: 1px solid var(--border-lo); }
+.ct-tfoot { border-top: 2px solid var(--border-lo); background: #f4fafd; color: var(--text-1); }
+.dark .ct-tfoot { background: #0b1422; }
 
 .ct-stick {
   position: sticky;
@@ -169,12 +187,8 @@
 .ct-stick-cb   { left: 0; }
 .ct-stick-name { left: 40px; box-shadow: 1px 0 0 var(--border-lo); }
 
-/* Header sticky cells need their own opaque bg (the row's --row-bg
-   is set per-row in tbody only). */
-thead .ct-stick {
-  background: var(--surface-hi);
-  z-index: 11; /* above body stickies (1) and below the thead's sticky-top (10) */
-}
+/* Header sticky cells need their own opaque bg (row --row-bg is body-only). */
+thead .ct-stick { background: inherit; z-index: 11; }
 
 /* Hover-reveal action buttons */
 .ct-actions {
@@ -184,11 +198,42 @@ thead .ct-stick {
 .ct-row:hover .ct-actions,
 .ct-row.ct-selected .ct-actions,
 .ct-row:focus-within .ct-actions { opacity: 1; }
+/* On touch / coarse pointers, hover-reveal is invisible — always show */
+@media (pointer: coarse) {
+  .ct-actions { opacity: 1; }
+}
 
 /* Density modes */
 .ct-dense tbody td { padding-top: 0.375rem; padding-bottom: 0.375rem; font-size: 11px; }
 .ct-dense tbody td .text-sm { font-size: 11px; }
 .ct-dense thead th { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+
+/* Dark-mode patches for the legacy CampaignsTable markup. The existing
+   table cells use hardcoded `text-navy/X`, `bg-white`, `border-cloud` etc.
+   from before dark mode existed; rather than refactor every cell, we
+   recolour them via descendant overrides only in `.dark`. */
+.dark .ct-tbody td,
+.dark .ct-tbody td * { color: var(--text-1); }
+.dark .ct-tbody td [class*="text-teal"] { color: var(--text-3); }
+.dark .ct-tbody td [class*="text-navy/3"],
+.dark .ct-tbody td [class*="text-navy/4"] { color: var(--text-3); }
+.dark .ct-tbody td [class*="text-navy/5"],
+.dark .ct-tbody td [class*="text-navy/6"],
+.dark .ct-tbody td [class*="text-navy/7"] { color: var(--text-2); }
+
+.dark .ct-thead th,
+.dark .ct-thead th * { color: var(--text-2); }
+.dark .ct-thead th [class*="text-teal"] { color: var(--text-3); }
+
+.dark .ct-tbody td [class*="border-cloud"],
+.dark .ct-thead th [class*="border-cloud"] { border-color: var(--border-lo); }
+.dark .ct-tbody td [class*="bg-white"] { background: rgba(255,255,255,0.03); }
+.dark .ct-tbody td [class*="bg-mist"]  { background: rgba(255,255,255,0.04); }
+
+/* Toolbar above the table reuses navy/cloud classes too */
+.dark .ct-toolbar [class*="text-navy"] { color: var(--text-2); }
+.dark .ct-toolbar [class*="text-teal"] { color: var(--text-3); }
+.dark .ct-toolbar [class*="border-cloud"] { border-color: var(--border-lo); }
 
 /* ── Scrollbar ─────────────────────────────────────────────── */
 ::-webkit-scrollbar        { width: 6px; height: 6px; }

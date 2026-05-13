@@ -19,7 +19,8 @@ export function InsightPanel({ activeId, onClose, children }: Props) {
   const dragRef  = useRef<{ startX: number; startW: number } | null>(null)
   const widthRef = useRef<number>(DEFAULT_W)
 
-  // Hydrate persisted width
+  // Hydrate persisted width — set --panel-w on the document root so the main
+  // content's padding-right reflows together with the panel during drag.
   useEffect(() => {
     try {
       const stored = localStorage.getItem(LS_KEY)
@@ -27,11 +28,18 @@ export function InsightPanel({ activeId, onClose, children }: Props) {
         const w = parseInt(stored, 10)
         if (w >= MIN_W && w <= MAX_W) {
           widthRef.current = w
-          if (wrap.current) wrap.current.style.setProperty('--panel-w', `${w}px`)
+          document.documentElement.style.setProperty('--panel-w', `${w}px`)
         }
       }
     } catch {}
   }, [])
+
+  // When this panel opens, push its width to the root so the layout reflows.
+  useEffect(() => {
+    if (activeId) {
+      document.documentElement.style.setProperty('--panel-w', `${widthRef.current}px`)
+    }
+  }, [activeId])
 
   // ESC to close
   useEffect(() => {
@@ -59,7 +67,7 @@ export function InsightPanel({ activeId, onClose, children }: Props) {
     const dx       = dragRef.current.startX - e.clientX  // moving left = wider
     const nextW    = Math.max(MIN_W, Math.min(MAX_W, dragRef.current.startW + dx))
     widthRef.current = nextW
-    wrap.current.style.setProperty('--panel-w', `${nextW}px`)
+    document.documentElement.style.setProperty('--panel-w', `${nextW}px`)
   }
 
   function onDragEnd(e: React.PointerEvent) {
@@ -78,7 +86,7 @@ export function InsightPanel({ activeId, onClose, children }: Props) {
       ref={wrap}
       className="fixed right-0 z-30 flex transition-transform duration-200 ease-out"
       style={{
-        top:    'calc(var(--nav-h, 56px) + 52px)',
+        top:    'calc(var(--nav-h, 56px) + var(--controls-h, 52px))',
         bottom: 0,
         width:  'var(--panel-w, 720px)',
         transform:      activeId ? 'translateX(0)' : 'translateX(calc(100% + 4px))',
