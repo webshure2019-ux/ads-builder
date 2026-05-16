@@ -2,6 +2,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 /**
+ * Constant-time string comparison. Always walks the full length and never
+ * early-returns, so an attacker can't use response timing to recover the
+ * expected token byte-by-byte. (Length is leaked, which is irrelevant for a
+ * fixed-length HMAC hex digest.)
+ */
+export function safeEqual(a: string, b: string): boolean {
+  const len = Math.max(a.length, b.length)
+  let diff = a.length ^ b.length
+  for (let i = 0; i < len; i++) {
+    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0)
+  }
+  return diff === 0
+}
+
+/**
  * Computes a deterministic session token by signing TOOL_PASSWORD with SESSION_SECRET
  * using HMAC-SHA-256. The cookie stores this derived token, never the raw password.
  * Works in both Node.js (API routes) and Edge (middleware) runtimes.
@@ -37,6 +52,6 @@ export async function requireAuth(request: NextRequest): Promise<NextResponse | 
   const cookie = request.cookies.get('ads-auth')?.value
   if (!cookie) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const expected = await computeSessionToken()
-  if (cookie !== expected) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!safeEqual(cookie, expected)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   return null
 }

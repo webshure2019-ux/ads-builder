@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { computeSessionToken } from '@/lib/auth'
+import { computeSessionToken, safeEqual } from '@/lib/auth'
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -12,7 +12,7 @@ export async function middleware(request: NextRequest) {
   const cookie = request.cookies.get('ads-auth')?.value
   const expected = await computeSessionToken()
 
-  if (!cookie || cookie !== expected) {
+  if (!cookie || !safeEqual(cookie, expected)) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 

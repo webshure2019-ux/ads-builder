@@ -1,6 +1,7 @@
 // lib/scraper.ts
 import * as cheerio from 'cheerio'
 import { ScrapedContent, ToneType } from '@/types'
+import { ssrfSafeFetch } from '@/lib/ssrf'
 
 export function inferTone(text: string): ToneType {
   const lower = text.toLowerCase()
@@ -102,10 +103,13 @@ function inferAudience(text: string): string {
 }
 
 export async function scrapeUrl(url: string): Promise<ScrapedContent> {
-  const response = await fetch(url, {
+  // ssrfSafeFetch re-validates the resolved IP at socket-connect time, so a
+  // host that rebinds to a private address after the route's assertSafeUrl()
+  // check is still refused. redirect:'error' blocks redirect-based SSRF.
+  const response = await ssrfSafeFetch(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WebshureAdsBot/1.0)' },
     signal: AbortSignal.timeout(10000),
-    redirect: 'error', // prevent redirect-based SSRF (DNS rebinding, open redirectors)
+    redirect: 'error',
   })
   if (!response.ok) throw new Error(`Failed to fetch page: HTTP ${response.status}`)
   const html = await response.text()
